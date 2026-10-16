@@ -3,7 +3,6 @@
 #include <cstring>
 #include <iostream>
 
-
 namespace dmc4 {
 
 static std::string s_gameRoot = "";
@@ -41,13 +40,14 @@ void UpdateControllerState(const VirtualGamepadState *state) {
     }
 }
 
+const VirtualGamepadState *GetControllerState() {
+    return &s_controllerState;
+}
+
 void ApplyProMotionFramerateHooks(int targetFPS) {
     s_targetFPS = targetFPS;
     std::cout << "[DMC4_Hooks] ProMotion Target: " << targetFPS << " FPS" << std::endl;
 
-    // When running at 120 FPS, the game renders 120 times a second.
-    // In MT Framework 1.x, physics updates use an internal fixed or semi-fixed step:
-    // If target is 120 FPS, we adjust delta_time scale so simulation matches real-world time.
     if (targetFPS >= 120) {
         std::cout << "[DMC4_Hooks] Applied 120Hz simulation rate patch (SimRate multiplier: 0.5f per sub-step)." << std::endl;
     } else {

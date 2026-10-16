@@ -13,7 +13,8 @@
 
 @property (nonatomic, weak) id<TouchOverlayViewDelegate> delegate;
 @property (nonatomic, assign) BOOL controlsHidden;
-@property (nonatomic, assign) CGFloat controlsOpacity; // default 0.85
+@property (nonatomic, assign) CGFloat controlsOpacity; // default 0.88
+@property (nonatomic, assign) BOOL floatingJoystickEnabled; // default YES
 
 - (const VirtualGamepadState *)currentGamepadState;
 - (void)resetGamepadState;

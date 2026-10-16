@@ -15,6 +15,7 @@ void InitializeEngineHooks();
 
 // Updates Xbox 360 controller state from touch overlay or physical gamepad
 void UpdateControllerState(const VirtualGamepadState *state);
+const VirtualGamepadState *GetControllerState();
 
 // Applies ProMotion 120Hz physics delta scaling
 void ApplyProMotionFramerateHooks(int targetFPS);
