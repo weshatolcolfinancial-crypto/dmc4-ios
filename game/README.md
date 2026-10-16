@@ -5,13 +5,13 @@ Place your legally acquired Xbox 360 *Devil May Cry 4* game files here:
 ```text
 game/
 ├── default.xex         <-- Main Xbox 360 game executable
-├── nativePC/           <-- Extracted MT Framework asset folder
+├── nativeXenon/        <-- Extracted MT Framework Xbox 360 asset folder (or nativePC/)
 │   ├── rom/
-│   │   ├── player/
-│   │   ├── enemy/
-│   │   ├── stage/
-│   │   └── sound/
-│   └── ...
+│   │   ├── id/title/   <-- Authentic title screen & UI archives
+│   │   ├── system/     <-- Game common archives
+│   │   ├── enemy/      <-- Character and boss assets
+│   │   └── room/       <-- Stage environments
+│   └── system/
 └── (or DevilMayCry4.iso)
 ```
 

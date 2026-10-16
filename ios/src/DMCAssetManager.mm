@@ -170,15 +170,18 @@
     // 3. Check for extracted game data in Documents/game/
     BOOL hasGameXex = [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"default.xex"]] ||
                       [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"DEFAULT.XEX"]];
+    BOOL hasNativeXenon = [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"nativeXenon"]];
     BOOL hasNativePC = [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"nativePC"]];
-    if (hasGameXex || hasNativePC) {
+    BOOL hasGameAssets = hasNativeXenon || hasNativePC;
+    if (hasGameXex || hasGameAssets) {
         self.isIsoDirectMount = NO;
         self.detectedIsoPath = nil;
         self.status = DMCAssetStatusReady;
         self.detectedGamePath = gameDir;
+        NSString *assetType = hasNativeXenon ? @"nativeXenon" : (hasNativePC ? @"nativePC" : @"");
         self.statusMessage = [NSString stringWithFormat:@"Game Ready in /game/ (%@%@)", 
                               hasGameXex ? @"default.xex" : @"",
-                              (hasGameXex && hasNativePC) ? @" + nativePC" : (hasNativePC ? @"nativePC" : @"")];
+                              (hasGameXex && hasGameAssets) ? [NSString stringWithFormat:@" + %@", assetType] : assetType];
         dmc4::boot::Trace("DMCAssetManager: Extracted game detected in " + std::string([gameDir UTF8String]));
         [self notifyGameReady:gameDir isExecutable:YES];
         return;
@@ -187,15 +190,18 @@
     // 4. Check for extracted game data directly in Documents/
     BOOL docHasXex = [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"default.xex"]] ||
                      [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"DEFAULT.XEX"]];
+    BOOL docHasNativeXenon = [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"nativeXenon"]];
     BOOL docHasNativePC = [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"nativePC"]];
-    if (docHasXex || docHasNativePC) {
+    BOOL docHasGameAssets = docHasNativeXenon || docHasNativePC;
+    if (docHasXex || docHasGameAssets) {
         self.isIsoDirectMount = NO;
         self.detectedIsoPath = nil;
         self.status = DMCAssetStatusReady;
         self.detectedGamePath = docs;
+        NSString *assetType = docHasNativeXenon ? @"nativeXenon" : (docHasNativePC ? @"nativePC" : @"");
         self.statusMessage = [NSString stringWithFormat:@"Game Ready in /Documents/ (%@%@)",
                               docHasXex ? @"default.xex" : @"",
-                              (docHasXex && docHasNativePC) ? @" + nativePC" : (docHasNativePC ? @"nativePC" : @"")];
+                              (docHasXex && docHasGameAssets) ? [NSString stringWithFormat:@" + %@", assetType] : assetType];
         dmc4::boot::Trace("DMCAssetManager: Extracted game detected in root Documents: " + std::string([docs UTF8String]));
         [self notifyGameReady:docs isExecutable:YES];
         return;
@@ -206,8 +212,9 @@
     if ([fm fileExistsAtPath:bundleGameDir]) {
         BOOL bundleXex = [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"default.xex"]] ||
                          [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"DEFAULT.XEX"]];
+        BOOL bundleXenon = [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"nativeXenon"]];
         BOOL bundleNpc = [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"nativePC"]];
-        if (bundleXex || bundleNpc) {
+        if (bundleXex || bundleXenon || bundleNpc) {
             self.isIsoDirectMount = NO;
             self.detectedIsoPath = nil;
             self.status = DMCAssetStatusReady;

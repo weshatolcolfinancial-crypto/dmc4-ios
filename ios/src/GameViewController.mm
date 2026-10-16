@@ -104,7 +104,7 @@
     _pathInstructionLabel.font = [UIFont systemFontOfSize:11];
     _pathInstructionLabel.textColor = [UIColor colorWithWhite:0.7 alpha:1.0];
     _pathInstructionLabel.textAlignment = NSTextAlignmentCenter;
-    _pathInstructionLabel.text = [NSString stringWithFormat:@"Game Folder Location:\n%@\n(Place default.xex and nativePC/ here)", 
+    _pathInstructionLabel.text = [NSString stringWithFormat:@"Game Folder Location:\n%@\n(Place default.xex and nativeXenon/ or ISO here)", 
                                   [[DMCAssetManager sharedManager] userFriendlyDocumentsPath]];
     [_launcherContainer addSubview:_pathInstructionLabel];
 

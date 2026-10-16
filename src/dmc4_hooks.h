@@ -33,7 +33,7 @@ void TickGameEngine(float deltaTime);
 bool IsGameReady();
 bool IsRecompiledGameActive();
 
-// MT Framework VFS resolver (resolves paths like "nativePC/rom/player/uPlayerDante.arc")
+// MT Framework VFS resolver (resolves paths like "nativeXenon/rom/player/uPlayerDante.arc")
 std::string ResolveGameAssetPath(const std::string &relativeSubPath);
 
 // Guest memory management (512MB RAM map for Xbox 360 guest)
