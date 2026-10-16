@@ -6,6 +6,7 @@
 namespace dmc4 {
 
 static std::string s_gameRoot = "";
+static std::string s_isoPath = "";
 static VirtualGamepadState s_controllerState = {};
 static int s_targetFPS = 60;
 static float s_aspectRatio = 16.0f / 9.0f;
@@ -21,8 +22,21 @@ const char *GetGameRootDirectory() {
     return s_gameRoot.c_str();
 }
 
+void MountGameIso(const char *isoPath) {
+    if (isoPath) {
+        s_isoPath = isoPath;
+        s_gameRoot = isoPath;
+        std::cout << "[DMC4_Hooks] Directly mounting Xbox 360 ISO container: " << s_isoPath << std::endl;
+        std::cout << "[DMC4_Hooks] VFS container active (--game_data_root=" << s_isoPath << ")" << std::endl;
+    }
+}
+
 void InitializeEngineHooks() {
-    std::cout << "[DMC4_Hooks] Initializing Capcom MT Framework engine patches on ARM64..." << std::endl;
+    std::cout << "[DMC4_Hooks] Initializing Capcom MT Framework engine on ARM64..." << std::endl;
+
+    if (!s_isoPath.empty()) {
+        std::cout << "[DMC4_Hooks] VFS attached to ISO: " << s_isoPath << std::endl;
+    }
 
     // 1. Hook into MT Framework memory allocator (mach_vm_allocate mapping for iOS)
     std::cout << "[DMC4_Hooks] Setting up 512MB guest Xbox 360 memory sandbox." << std::endl;

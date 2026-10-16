@@ -6,9 +6,12 @@
 
 namespace dmc4 {
 
-// Sets the root directory where DMC4 game files/ISO reside
+// Sets the root directory or ISO path where DMC4 game files reside
 void SetGameRootDirectory(const char *path);
 const char *GetGameRootDirectory();
+
+// Directly mounts and boots from an Xbox 360 ISO image
+void MountGameIso(const char *isoPath);
 
 // Initializes MT Framework engine hooks on Apple Silicon ARM64
 void InitializeEngineHooks();

@@ -78,9 +78,10 @@ jobs:
               --app-icon AppIcon \
               --output-format human-readable-text || true
           fi
-          echo "[+] Bundling DMC4 iOS App Icons..."
+          echo "[+] Bundling DMC4 iOS App Icons and Gameplay Background..."
           cp -v ios/AppIcon*.png "$APP_PATH/" || true
           cp -r ios/AppIcon.appiconset "$APP_PATH/" || true
+          cp -v ios/dmc4_bg.jpg "$APP_PATH/" || true
 
           # 2. Embed MoltenVK Framework if present
           mkdir -p "$APP_PATH/Frameworks"

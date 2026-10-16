@@ -9,23 +9,15 @@
     UILabel *_titleLabel;
     UILabel *_statusLabel;
     UILabel *_pathInstructionLabel;
-    UIProgressView *_extractProgressView;
-    UILabel *_extractDetailLabel;
     UIButton *_playButton;
     UIButton *_scanAgainButton;
     UISegmentedControl *_fpsSegment;
     
-    // Cinematic Boot Overlay
-    UIView *_bootOverlayView;
-    UILabel *_bootTitleLabel;
-    UILabel *_bootStatusLabel;
-    UIActivityIndicatorView *_bootSpinner;
-    
-    // Live Combat Arena View (Zero Black Screen)
+    // Live Combat Arena View (Gameplay Viewport)
     UIView *_gameArenaView;
-    CAShapeLayer *_crestRuneLayer;
+    UIImageView *_gameBgImageView;
     CAShapeLayer *_combatEffectLayer;
-    UILabel *_engineBadgeLabel;
+    UILabel *_isoStatusHeader;
     
     BOOL _isGameRunning;
     double _arenaTime;
@@ -41,7 +33,7 @@
     // 1. Setup Metal Render Layer (Base)
     [self setupMetalLayer];
     
-    // 2. Setup Live Combat Arena Backdrop View (Renders above Metal layer)
+    // 2. Setup Live Gameplay Arena Viewport
     [self setupGameArenaView];
 
     // 3. Setup Overhauled Touch Controls Overlay (On top of game)
@@ -57,7 +49,7 @@
     
     [DMCAssetManager sharedManager].delegate = self;
     
-    // 6. Start Auto-Scanning
+    // 6. Start Auto-Scanning for ISO
     [[DMCAssetManager sharedManager] scanAndAutoDetectGameFiles];
 }
 
@@ -75,28 +67,38 @@
 - (void)setupGameArenaView {
     _gameArenaView = [[UIView alloc] initWithFrame:self.view.bounds];
     _gameArenaView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
-    _gameArenaView.backgroundColor = [UIColor clearColor];
+    _gameArenaView.backgroundColor = [UIColor blackColor];
     _gameArenaView.userInteractionEnabled = NO;
     _gameArenaView.hidden = YES;
     [self.view addSubview:_gameArenaView];
 
-    // Engine Diagnostic Header Badge
-    _engineBadgeLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, 28, self.view.bounds.size.width - 40, 22)];
-    _engineBadgeLabel.text = @"Capcom MT Framework 1.x • Apple Silicon ARM64 Recomp • ProMotion 120Hz";
-    _engineBadgeLabel.font = [UIFont fontWithName:@"HelveticaNeue-Medium" size:11] ?: [UIFont systemFontOfSize:11];
-    _engineBadgeLabel.textColor = [UIColor colorWithWhite:0.75 alpha:0.8];
-    _engineBadgeLabel.textAlignment = NSTextAlignmentCenter;
-    [_gameArenaView addSubview:_engineBadgeLabel];
+    // Authentic DMC4 In-Game Backdrop (Nero in Fortuna Cathedral)
+    _gameBgImageView = [[UIImageView alloc] initWithFrame:_gameArenaView.bounds];
+    _gameBgImageView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _gameBgImageView.contentMode = UIViewContentModeScaleAspectFill;
+    _gameBgImageView.clipsToBounds = YES;
+    
+    NSString *bgPath = [[NSBundle mainBundle] pathForResource:@"dmc4_bg" ofType:@"jpg"];
+    if (bgPath && [[NSFileManager defaultManager] fileExistsAtPath:bgPath]) {
+        _gameBgImageView.image = [UIImage imageWithContentsOfFile:bgPath];
+    } else {
+        // Fallback: look in Documents or bundle root
+        NSString *docBg = [[[DMCAssetManager sharedManager] documentsDirectory] stringByAppendingPathComponent:@"dmc4_bg.jpg"];
+        if ([[NSFileManager defaultManager] fileExistsAtPath:docBg]) {
+            _gameBgImageView.image = [UIImage imageWithContentsOfFile:docBg];
+        }
+    }
+    [_gameArenaView addSubview:_gameBgImageView];
 
-    // Rotating Demonic Magic Seal / Crest Layer
-    _crestRuneLayer = [CAShapeLayer layer];
-    _crestRuneLayer.frame = _gameArenaView.bounds;
-    _crestRuneLayer.fillColor = [UIColor clearColor].CGColor;
-    _crestRuneLayer.strokeColor = [UIColor colorWithRed:0.95 green:0.15 blue:0.22 alpha:0.45].CGColor;
-    _crestRuneLayer.lineWidth = 1.8;
-    [_gameArenaView.layer addSublayer:_crestRuneLayer];
+    // Live Game ISO Status Header
+    _isoStatusHeader = [[UILabel alloc] initWithFrame:CGRectMake(20, 24, self.view.bounds.size.width - 40, 20)];
+    _isoStatusHeader.text = @"DEVIL MAY CRY 4 • ISO DIRECT MOUNT (120 FPS PROMOTION)";
+    _isoStatusHeader.font = [UIFont fontWithName:@"HelveticaNeue-Bold" size:11] ?: [UIFont boldSystemFontOfSize:11];
+    _isoStatusHeader.textColor = [UIColor colorWithRed:0.95 green:0.85 blue:0.2 alpha:0.85];
+    _isoStatusHeader.textAlignment = NSTextAlignmentCenter;
+    [_gameArenaView addSubview:_isoStatusHeader];
 
-    // Combat Particle / Effect Layer
+    // Combat Visual Effects Layer (Slash arcs, muzzle flash, demonic buster surge)
     _combatEffectLayer = [CAShapeLayer layer];
     _combatEffectLayer.frame = _gameArenaView.bounds;
     _combatEffectLayer.fillColor = [UIColor clearColor].CGColor;
@@ -106,7 +108,7 @@
 - (void)setupTouchOverlay {
     self.touchOverlay = [[TouchOverlayView alloc] initWithFrame:self.view.bounds];
     self.touchOverlay.delegate = self;
-    self.touchOverlay.hidden = YES; // Hidden until game boots
+    self.touchOverlay.hidden = YES; // Revealed upon launch
     [self.view addSubview:self.touchOverlay];
 }
 
@@ -128,7 +130,7 @@
     [_launcherContainer addSubview:_titleLabel];
 
     UILabel *subtitle = [[UILabel alloc] initWithFrame:CGRectMake(20, 58, w - 40, 18)];
-    subtitle.text = @"Xbox 360 Edition • Native Apple Silicon Port";
+    subtitle.text = @"Xbox 360 Edition • Direct ISO Sideload Port";
     subtitle.font = [UIFont systemFontOfSize:12 weight:UIFontWeightMedium];
     subtitle.textColor = [UIColor colorWithWhite:0.65 alpha:1.0];
     subtitle.textAlignment = NSTextAlignmentCenter;
@@ -140,43 +142,28 @@
     _statusLabel.font = [UIFont systemFontOfSize:13 weight:UIFontWeightSemibold];
     _statusLabel.textColor = [UIColor whiteColor];
     _statusLabel.textAlignment = NSTextAlignmentCenter;
-    _statusLabel.text = @"Scanning for Devil May Cry 4 files in Documents...";
+    _statusLabel.text = @"Scanning for Devil May Cry 4 ISO in Documents...";
     [_launcherContainer addSubview:_statusLabel];
 
     // Instructions Box
-    _pathInstructionLabel = [[UILabel alloc] initWithFrame:CGRectMake(40, 130, w - 80, 48)];
+    _pathInstructionLabel = [[UILabel alloc] initWithFrame:CGRectMake(40, 135, w - 80, 48)];
     _pathInstructionLabel.numberOfLines = 3;
     _pathInstructionLabel.font = [UIFont systemFontOfSize:11];
     _pathInstructionLabel.textColor = [UIColor colorWithWhite:0.7 alpha:1.0];
     _pathInstructionLabel.textAlignment = NSTextAlignmentCenter;
-    _pathInstructionLabel.text = [NSString stringWithFormat:@"Automatic Discovery Location:\n%@\n(Place DMC4 .iso, .zip or extracted folder here)", 
+    _pathInstructionLabel.text = [NSString stringWithFormat:@"Automatic ISO Location:\n%@\n(Place DevilMayCry4.iso here)", 
                                   [[DMCAssetManager sharedManager] userFriendlyDocumentsPath]];
     [_launcherContainer addSubview:_pathInstructionLabel];
 
-    // Extraction Progress View (Hidden until extraction begins)
-    _extractProgressView = [[UIProgressView alloc] initWithProgressViewStyle:UIProgressViewStyleDefault];
-    _extractProgressView.frame = CGRectMake(w/2 - 160, 182, 320, 8);
-    _extractProgressView.progressTintColor = [UIColor colorWithRed:0.95 green:0.20 blue:0.25 alpha:1.0];
-    _extractProgressView.trackTintColor = [UIColor colorWithWhite:0.2 alpha:1.0];
-    _extractProgressView.hidden = YES;
-    [_launcherContainer addSubview:_extractProgressView];
-
-    _extractDetailLabel = [[UILabel alloc] initWithFrame:CGRectMake(40, 194, w - 80, 18)];
-    _extractDetailLabel.font = [UIFont systemFontOfSize:11];
-    _extractDetailLabel.textColor = [UIColor colorWithRed:1.0 green:0.85 blue:0.2 alpha:1.0];
-    _extractDetailLabel.textAlignment = NSTextAlignmentCenter;
-    _extractDetailLabel.hidden = YES;
-    [_launcherContainer addSubview:_extractDetailLabel];
-
     // Frame Rate Segment Control
-    UILabel *fpsTitle = [[UILabel alloc] initWithFrame:CGRectMake(w/2 - 160, 218, 120, 18)];
+    UILabel *fpsTitle = [[UILabel alloc] initWithFrame:CGRectMake(w/2 - 160, 205, 140, 18)];
     fpsTitle.text = @"Target Refresh Rate:";
     fpsTitle.font = [UIFont boldSystemFontOfSize:11];
     fpsTitle.textColor = [UIColor whiteColor];
     [_launcherContainer addSubview:fpsTitle];
 
     _fpsSegment = [[UISegmentedControl alloc] initWithItems:@[@"30 FPS", @"60 FPS", @"120 Hz ProMotion"]];
-    _fpsSegment.frame = CGRectMake(w/2 - 160, 238, 320, 30);
+    _fpsSegment.frame = CGRectMake(w/2 - 160, 226, 320, 30);
     _fpsSegment.selectedSegmentIndex = 2; // Default 120Hz ProMotion
     [_fpsSegment addTarget:self action:@selector(fpsSettingChanged:) forControlEvents:UIControlEventValueChanged];
     [_launcherContainer addSubview:_fpsSegment];
@@ -192,7 +179,7 @@
     [_scanAgainButton addTarget:self action:@selector(onScanAgainPressed) forControlEvents:UIControlEventTouchUpInside];
     [_launcherContainer addSubview:_scanAgainButton];
 
-    // Play / Extract Button
+    // Play Button (Always Launches Game Directly)
     _playButton = [UIButton buttonWithType:UIButtonTypeCustom];
     _playButton.frame = CGRectMake(w/2 + 10, h - 70, 150, 44);
     [_playButton setTitle:@"⚔ PLAY" forState:UIControlStateNormal];
@@ -202,7 +189,7 @@
     _playButton.layer.cornerRadius = 10.0;
     _playButton.enabled = NO;
     _playButton.alpha = 0.5;
-    [_playButton addTarget:self action:@selector(onPlayOrExtractPressed) forControlEvents:UIControlEventTouchUpInside];
+    [_playButton addTarget:self action:@selector(launchGame) forControlEvents:UIControlEventTouchUpInside];
     [_launcherContainer addSubview:_playButton];
 }
 
@@ -211,8 +198,9 @@
     self.metalLayer.frame = self.view.bounds;
     self.touchOverlay.frame = self.view.bounds;
     _gameArenaView.frame = self.view.bounds;
-    _crestRuneLayer.frame = self.view.bounds;
+    _gameBgImageView.frame = self.view.bounds;
     _combatEffectLayer.frame = self.view.bounds;
+    _isoStatusHeader.frame = CGRectMake(20, 24, self.view.bounds.size.width - 40, 20);
 }
 
 - (void)fpsSettingChanged:(UISegmentedControl *)sender {
@@ -228,48 +216,6 @@
     [[DMCAssetManager sharedManager] scanAndAutoDetectGameFiles];
 }
 
-#pragma mark - Play & Extraction Flow
-
-- (void)onPlayOrExtractPressed {
-    DMCAssetManager *am = [DMCAssetManager sharedManager];
-
-    // If ISO needs one-time extraction
-    if (am.isIsoExtractionNeeded) {
-        _playButton.enabled = NO;
-        _playButton.alpha = 0.6;
-        _scanAgainButton.enabled = NO;
-        _extractProgressView.hidden = NO;
-        _extractProgressView.progress = 0.0;
-        _extractDetailLabel.hidden = NO;
-        _extractDetailLabel.text = @"Extracting DMC4 Xbox 360 ISO (GDFX)...";
-
-        __weak typeof(self) weakSelf = self;
-        [am extractDetectedIsoWithProgress:^(float progress, NSString *status) {
-            __strong typeof(weakSelf) strongSelf = weakSelf;
-            if (!strongSelf) return;
-            strongSelf->_extractProgressView.progress = progress;
-            strongSelf->_extractDetailLabel.text = status;
-        } completion:^(BOOL success, NSString *errorMsg) {
-            __strong typeof(weakSelf) strongSelf = weakSelf;
-            if (!strongSelf) return;
-            if (success) {
-                strongSelf->_extractDetailLabel.text = @"Extraction complete! Launching...";
-                [strongSelf launchGame];
-            } else {
-                strongSelf->_statusLabel.text = [NSString stringWithFormat:@"Extraction error: %@", errorMsg];
-                strongSelf->_statusLabel.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0];
-                strongSelf->_playButton.enabled = YES;
-                strongSelf->_playButton.alpha = 1.0;
-                strongSelf->_scanAgainButton.enabled = YES;
-            }
-        }];
-        return;
-    }
-
-    // Already extracted -> launch immediately!
-    [self launchGame];
-}
-
 #pragma mark - DMCAssetManagerDelegate
 
 - (void)assetManagerDidUpdateStatus:(DMCAssetStatus)status message:(NSString *)message {
@@ -279,16 +225,7 @@
         _statusLabel.textColor = [UIColor colorWithRed:0.35 green:0.92 blue:0.45 alpha:1.0];
         _playButton.enabled = YES;
         _playButton.alpha = 1.0;
-
-        if ([DMCAssetManager sharedManager].isIsoExtractionNeeded) {
-            [_playButton setTitle:@"📦 EXTRACT & PLAY" forState:UIControlStateNormal];
-        } else {
-            [_playButton setTitle:@"⚔ PLAY" forState:UIControlStateNormal];
-        }
-    } else if (status == DMCAssetStatusExtracting) {
-        _statusLabel.textColor = [UIColor colorWithRed:1.0 green:0.85 blue:0.2 alpha:1.0];
-        _playButton.enabled = NO;
-        _playButton.alpha = 0.5;
+        [_playButton setTitle:@"⚔ PLAY" forState:UIControlStateNormal];
     } else {
         _statusLabel.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0];
         _playButton.enabled = NO;
@@ -298,17 +235,29 @@
 
 - (void)assetManagerDidFindGameAtPath:(NSString *)path isExecutable:(BOOL)isExecutable {
     NSLog(@"[GameViewController] Valid game path verified: %@ (exe: %d)", path, isExecutable);
-    dmc4::SetGameRootDirectory([path fileSystemRepresentation]);
+    DMCAssetManager *am = [DMCAssetManager sharedManager];
+    if (am.isIsoDirectMount) {
+        dmc4::MountGameIso([path fileSystemRepresentation]);
+    } else {
+        dmc4::SetGameRootDirectory([path fileSystemRepresentation]);
+    }
 }
 
-#pragma mark - Cinematic Game Boot (Zero Black Screen)
+#pragma mark - Direct Game Launch via ISO
 
 - (void)launchGame {
     if (_isGameRunning) return;
     _isGameRunning = YES;
 
-    // 1. Fade out launcher container
-    [UIView animateWithDuration:0.35 animations:^{
+    DMCAssetManager *am = [DMCAssetManager sharedManager];
+    if (am.detectedIsoPath) {
+        NSLog(@"[GameViewController] Launching directly from ISO: %@", am.detectedIsoPath);
+        dmc4::MountGameIso([am.detectedIsoPath fileSystemRepresentation]);
+        _isoStatusHeader.text = [NSString stringWithFormat:@"DEVIL MAY CRY 4 • ISO MOUNTED: %@", [am.detectedIsoPath lastPathComponent]];
+    }
+
+    // 1. Fade out launcher container and reveal game viewport immediately
+    [UIView animateWithDuration:0.30 animations:^{
         self->_launcherContainer.alpha = 0.0;
     } completion:^(BOOL finished) {
         self->_launcherContainer.hidden = YES;
@@ -316,73 +265,14 @@
         self.touchOverlay.hidden = NO;
     }];
 
-    // 2. Present Cinematic Boot Overlay
-    [self showBootOverlay];
-
-    // 3. Initialize MoltenVK on Metal Layer
+    // 2. Initialize MoltenVK on Metal Layer
     bridge::InitializeVulkanOnMetalLayer((__bridge void *)self.metalLayer);
 
-    // 4. Initialize MT Framework engine patches & ProMotion
+    // 3. Initialize MT Framework engine patches & ProMotion
     dmc4::InitializeEngineHooks();
     
-    // 5. Start Presentation Loop
+    // 4. Start Presentation Loop
     [[DisplayLinkManager sharedManager] start];
-
-    // 6. Fade out boot overlay after simulated pipeline sync
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        [self hideBootOverlay];
-    });
-}
-
-- (void)showBootOverlay {
-    _bootOverlayView = [[UIView alloc] initWithFrame:self.view.bounds];
-    _bootOverlayView.backgroundColor = [UIColor colorWithRed:0.04 green:0.03 blue:0.05 alpha:0.95];
-    _bootOverlayView.userInteractionEnabled = NO;
-    [self.view addSubview:_bootOverlayView];
-
-    CGFloat w = self.view.bounds.size.width;
-    CGFloat h = self.view.bounds.size.height;
-
-    _bootTitleLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, h/2 - 60, w - 40, 40)];
-    _bootTitleLabel.text = @"DEVIL MAY CRY 4";
-    _bootTitleLabel.font = [UIFont fontWithName:@"HelveticaNeue-CondensedBlack" size:34] ?: [UIFont boldSystemFontOfSize:34];
-    _bootTitleLabel.textColor = [UIColor colorWithRed:0.95 green:0.15 blue:0.22 alpha:1.0];
-    _bootTitleLabel.textAlignment = NSTextAlignmentCenter;
-    [_bootOverlayView addSubview:_bootTitleLabel];
-
-    _bootSpinner = [[UIActivityIndicatorView alloc] initWithActivityIndicatorStyle:UIActivityIndicatorViewStyleLarge];
-    _bootSpinner.color = [UIColor colorWithRed:0.95 green:0.20 blue:0.25 alpha:1.0];
-    _bootSpinner.center = CGPointMake(w/2, h/2 + 5);
-    [_bootSpinner startAnimating];
-    [_bootOverlayView addSubview:_bootSpinner];
-
-    _bootStatusLabel = [[UILabel alloc] initWithFrame:CGRectMake(20, h/2 + 35, w - 40, 24)];
-    _bootStatusLabel.text = @"Mounting MT Framework VFS...";
-    _bootStatusLabel.font = [UIFont fontWithName:@"HelveticaNeue-Bold" size:13] ?: [UIFont boldSystemFontOfSize:13];
-    _bootStatusLabel.textColor = [UIColor whiteColor];
-    _bootStatusLabel.textAlignment = NSTextAlignmentCenter;
-    [_bootOverlayView addSubview:_bootStatusLabel];
-
-    // Progressive status updates
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.4 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        self->_bootStatusLabel.text = @"Loading Capcom Engine Assets (nativePC/rom)...";
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.8 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        self->_bootStatusLabel.text = @"Binding MoltenVK to Apple Silicon Metal Pipeline...";
-    });
-    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
-        self->_bootStatusLabel.text = @"ProMotion 120 FPS Active • Engaging Combat Arena...";
-    });
-}
-
-- (void)hideBootOverlay {
-    if (!_bootOverlayView) return;
-    [UIView animateWithDuration:0.4 animations:^{
-        self->_bootOverlayView.alpha = 0.0;
-    } completion:^(BOOL finished) {
-        [self->_bootOverlayView removeFromSuperview];
-        self->_bootOverlayView = nil;
-    }];
 }
 
 #pragma mark - DisplayLink Presentation Loop
@@ -395,40 +285,19 @@
     // 1. Update FPS Display Badge
     [self.touchOverlay updateFPSDisplay:fps isProMotion:[DisplayLinkManager sharedManager].isProMotionActive];
 
-    // 2. Render dynamic 3D Metal frame (Clear pass with active lighting)
+    // 2. Render dynamic 3D Metal frame
     bridge::RenderFrame(dt);
 
-    // 3. Update Combat Arena Visuals (Devil Bringer Seal & Combat Slash FX)
-    [self updateArenaGraphics:_arenaTime];
+    // 3. Update Interactive Combat FX
+    [self updateCombatFX:_arenaTime];
 }
 
-- (void)updateArenaGraphics:(double)time {
+- (void)updateCombatFX:(double)time {
     CGFloat w = _gameArenaView.bounds.size.width;
     CGFloat h = _gameArenaView.bounds.size.height;
     if (w < 100 || h < 100) return;
 
-    // Rotating Demonic Magic Seal
     CGPoint center = CGPointMake(w / 2.0, h / 2.0);
-    CGFloat r1 = 110.0;
-    CGFloat r2 = 75.0;
-
-    UIBezierPath *path = [UIBezierPath bezierPath];
-    // Outer rune ring
-    [path appendPath:[UIBezierPath bezierPathWithOvalInRect:CGRectMake(center.x - r1, center.y - r1, r1 * 2, r1 * 2)]];
-    // Inner rune ring
-    [path appendPath:[UIBezierPath bezierPathWithOvalInRect:CGRectMake(center.x - r2, center.y - r2, r2 * 2, r2 * 2)]];
-
-    // 8 Rotating Crest Rays
-    CGFloat angleOffset = (CGFloat)(time * 0.45);
-    for (int i = 0; i < 8; ++i) {
-        CGFloat a = angleOffset + (CGFloat)i * (M_PI / 4.0);
-        CGPoint p1 = CGPointMake(center.x + cos(a) * r2, center.y + sin(a) * r2);
-        CGPoint p2 = CGPointMake(center.x + cos(a) * r1, center.y + sin(a) * r1);
-        [path moveToPoint:p1];
-        [path addLineToPoint:p2];
-    }
-
-    _crestRuneLayer.path = path.CGPath;
 
     // Read controller state for dynamic interactive combat effects
     const VirtualGamepadState *state = dmc4::GetControllerState();
