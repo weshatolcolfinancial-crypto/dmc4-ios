@@ -2,8 +2,7 @@
 
 #include <cstdint>
 #include <string>
-
-struct VirtualGamepadState;
+#include "virtual_gamepad.h"
 
 namespace dmc4 {
 

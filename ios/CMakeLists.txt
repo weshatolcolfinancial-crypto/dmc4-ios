@@ -14,7 +14,7 @@ set(IOS_SOURCES
     src/TouchOverlayView.mm
     src/ControllerManager.mm
     ../src/dmc4_hooks.cpp
-    ../renderer/vulkan_metal_bridge.cpp
+    ../renderer/vulkan_metal_bridge.mm
 )
 
 set(IOS_HEADERS

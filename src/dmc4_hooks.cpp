@@ -3,7 +3,6 @@
 #include <cstring>
 #include <iostream>
 
-#include "TouchOverlayView.h"
 
 namespace dmc4 {
 
