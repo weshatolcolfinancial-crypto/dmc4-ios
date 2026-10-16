@@ -245,18 +245,22 @@
 
         __weak typeof(self) weakSelf = self;
         [am extractDetectedIsoWithProgress:^(float progress, NSString *status) {
-            weakSelf->_extractProgressView.progress = progress;
-            weakSelf->_extractDetailLabel.text = status;
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
+            strongSelf->_extractProgressView.progress = progress;
+            strongSelf->_extractDetailLabel.text = status;
         } completion:^(BOOL success, NSString *errorMsg) {
+            __strong typeof(weakSelf) strongSelf = weakSelf;
+            if (!strongSelf) return;
             if (success) {
-                weakSelf->_extractDetailLabel.text = @"Extraction complete! Launching...";
-                [weakSelf launchGame];
+                strongSelf->_extractDetailLabel.text = @"Extraction complete! Launching...";
+                [strongSelf launchGame];
             } else {
-                weakSelf->_statusLabel.text = [NSString stringWithFormat:@"Extraction error: %@", errorMsg];
-                weakSelf->_statusLabel.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0];
-                weakSelf->_playButton.enabled = YES;
-                weakSelf->_playButton.alpha = 1.0;
-                weakSelf->_scanAgainButton.enabled = YES;
+                strongSelf->_statusLabel.text = [NSString stringWithFormat:@"Extraction error: %@", errorMsg];
+                strongSelf->_statusLabel.textColor = [UIColor colorWithRed:1.0 green:0.4 blue:0.4 alpha:1.0];
+                strongSelf->_playButton.enabled = YES;
+                strongSelf->_playButton.alpha = 1.0;
+                strongSelf->_scanAgainButton.enabled = YES;
             }
         }];
         return;
