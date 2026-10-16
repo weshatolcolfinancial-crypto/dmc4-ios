@@ -1,7 +1,10 @@
 #pragma once
 
-#import <Foundation/Foundation.h>
 #include <string>
+
+#ifdef __OBJC__
+#import <Foundation/Foundation.h>
+#endif
 
 namespace dmc4::boot {
 
@@ -11,7 +14,9 @@ void InitializeLogging();
 // Writes unbuffered timestamped trace line to Documents/logs/boot.txt
 void Trace(const std::string &message);
 
+#ifdef __OBJC__
 // Returns path to Documents/logs folder
 NSString *GetLogsDirectoryPath();
+#endif
 
 } // namespace dmc4::boot
