@@ -66,8 +66,8 @@ target_link_libraries(DMC4iOS PRIVATE
 if(DMC4_BUILD_IPA)
     add_custom_command(TARGET DMC4iOS POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:DMC4iOS>/Payload
-        COMMAND ${CMAKE_COMMAND} -E copy_directory $<TARGET_BUNDLE_DIR:DMC4iOS> $<TARGET_FILE_DIR:DMC4iOS>/Payload/$<TARGET_BUNDLE_NAME:DMC4iOS>
-        COMMAND ${CMAKE_COMMAND} -E chdir $<TARGET_FILE_DIR:DMC4iOS> zip -r -y -q DMC4.ipa Payload
+        COMMAND ${CMAKE_COMMAND} -E copy_directory $<TARGET_BUNDLE_DIR:DMC4iOS> $<TARGET_FILE_DIR:DMC4iOS>/Payload/DevilMayCry4.app
+        COMMAND ${CMAKE_COMMAND} -E chdir $<TARGET_FILE_DIR:DMC4iOS> zip -r -y -q DevilMayCry4.ipa Payload
         COMMAND ${CMAKE_COMMAND} -E remove_directory $<TARGET_FILE_DIR:DMC4iOS>/Payload
         COMMENT "Packaging Devil May Cry 4 iOS IPA..."
     )
