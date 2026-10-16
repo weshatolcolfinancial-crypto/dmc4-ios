@@ -6,11 +6,13 @@ Payload/
 libs/
 
 # Game files & large binaries (Users provide their own legal files)
-game/*.xex
-game/*.iso
-game/*.zip
+game/*
+!game/README.md
+!game/.gitkeep
 *.iso
-*.zip
+*.xex
+*.arc
+*.bin
 Documents/
 
 # OS and IDE files

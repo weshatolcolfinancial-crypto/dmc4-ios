@@ -16,6 +16,7 @@ set(IOS_SOURCES
     src/DMCBootTrace.mm
     ../src/dmc4_hooks.cpp
     ../renderer/vulkan_metal_bridge.mm
+    ${DMC4_GAME_SOURCES}
 )
 
 set(IOS_HEADERS
@@ -28,6 +29,7 @@ set(IOS_HEADERS
     src/DMCBootTrace.h
     ../src/dmc4_hooks.h
     ../renderer/vulkan_metal_bridge.h
+    ../src/recompiled/dmc4_recomp.h
 )
 
 add_executable(DMC4iOS

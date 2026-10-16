@@ -346,10 +346,13 @@
     // 1. Update FPS Display Badge
     [self.touchOverlay updateFPSDisplay:fps isProMotion:[DisplayLinkManager sharedManager].isProMotionActive];
 
-    // 2. Render dynamic 3D Metal frame (MoltenVK Vulkan presentation)
+    // 2. Tick recompiled game engine simulation
+    dmc4::TickGameEngine((float)dt);
+
+    // 3. Render dynamic 3D Metal frame (MoltenVK Vulkan presentation)
     bridge::RenderFrame(dt);
 
-    // 3. Update Interactive Combat FX and Style Meter
+    // 4. Update Interactive Combat FX and Style Meter
     [self updateCombatFX:dt];
 
     // 4. Periodic telemetry log every ~300 frames (~2.5s at 120 FPS)

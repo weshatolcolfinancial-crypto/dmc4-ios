@@ -27,9 +27,23 @@ endif()
 # Set up include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/recompiled
     ${CMAKE_CURRENT_SOURCE_DIR}/renderer
     ${CMAKE_CURRENT_SOURCE_DIR}/ios/src
 )
+
+# Auto-include recompiled game sources
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/recompiled/sources.cmake")
+    include("${CMAKE_CURRENT_SOURCE_DIR}/src/recompiled/sources.cmake")
+    if(DMC4_GAME_SOURCES)
+        add_compile_definitions(DMC4_WITH_GAME=1)
+        message(STATUS "[DMC4] Recompiled game sources registered (${DMC4_GAME_SOURCES})")
+    else()
+        add_compile_definitions(DMC4_WITH_GAME=0)
+        message(STATUS "[DMC4] Running with stub/fallback recompilation engine.")
+    endif()
+endif()
+
 
 # Compiler flags for Apple Silicon ARM64 iOS
 set(CMAKE_XCODE_ATTRIBUTE_ONLY_ACTIVE_ARCH NO)

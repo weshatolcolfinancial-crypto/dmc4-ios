@@ -26,4 +26,19 @@ void ApplyProMotionFramerateHooks(int targetFPS);
 // Widescreen 19.5:9 and notch / safe area viewport patch
 void ApplyWidescreenViewportPatch(float aspectRatio);
 
+// Game engine simulation tick (invoked per CADisplayLink frame)
+void TickGameEngine(float deltaTime);
+
+// Checks if game assets or recompiled code are ready
+bool IsGameReady();
+bool IsRecompiledGameActive();
+
+// MT Framework VFS resolver (resolves paths like "nativePC/rom/player/uPlayerDante.arc")
+std::string ResolveGameAssetPath(const std::string &relativeSubPath);
+
+// Guest memory management (512MB RAM map for Xbox 360 guest)
+void *GetGuestMemoryBase();
+size_t GetGuestMemorySize();
+
 } // namespace dmc4
+

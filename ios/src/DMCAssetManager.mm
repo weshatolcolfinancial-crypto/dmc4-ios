@@ -167,25 +167,64 @@
         }
     }
 
-    // 3. Check for extracted game in Documents/game/
-    NSString *gameXex = [gameDir stringByAppendingPathComponent:@"default.xex"];
-    if ([fm fileExistsAtPath:gameXex]) {
+    // 3. Check for extracted game data in Documents/game/
+    BOOL hasGameXex = [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"default.xex"]] ||
+                      [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"DEFAULT.XEX"]];
+    BOOL hasNativePC = [fm fileExistsAtPath:[gameDir stringByAppendingPathComponent:@"nativePC"]];
+    if (hasGameXex || hasNativePC) {
         self.isIsoDirectMount = NO;
         self.detectedIsoPath = nil;
         self.status = DMCAssetStatusReady;
         self.detectedGamePath = gameDir;
-        self.statusMessage = @"Game directory ready in /Documents/game/";
-        dmc4::boot::Trace("DMCAssetManager: Found extracted default.xex in " + std::string([gameDir UTF8String]));
+        self.statusMessage = [NSString stringWithFormat:@"Game Ready in /game/ (%@%@)", 
+                              hasGameXex ? @"default.xex" : @"",
+                              (hasGameXex && hasNativePC) ? @" + nativePC" : (hasNativePC ? @"nativePC" : @"")];
+        dmc4::boot::Trace("DMCAssetManager: Extracted game detected in " + std::string([gameDir UTF8String]));
         [self notifyGameReady:gameDir isExecutable:YES];
         return;
+    }
+
+    // 4. Check for extracted game data directly in Documents/
+    BOOL docHasXex = [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"default.xex"]] ||
+                     [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"DEFAULT.XEX"]];
+    BOOL docHasNativePC = [fm fileExistsAtPath:[docs stringByAppendingPathComponent:@"nativePC"]];
+    if (docHasXex || docHasNativePC) {
+        self.isIsoDirectMount = NO;
+        self.detectedIsoPath = nil;
+        self.status = DMCAssetStatusReady;
+        self.detectedGamePath = docs;
+        self.statusMessage = [NSString stringWithFormat:@"Game Ready in /Documents/ (%@%@)",
+                              docHasXex ? @"default.xex" : @"",
+                              (docHasXex && docHasNativePC) ? @" + nativePC" : (docHasNativePC ? @"nativePC" : @"")];
+        dmc4::boot::Trace("DMCAssetManager: Extracted game detected in root Documents: " + std::string([docs UTF8String]));
+        [self notifyGameReady:docs isExecutable:YES];
+        return;
+    }
+
+    // 5. Check if bundled inside App Bundle (e.g. pre-packaged IPA)
+    NSString *bundleGameDir = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"game"];
+    if ([fm fileExistsAtPath:bundleGameDir]) {
+        BOOL bundleXex = [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"default.xex"]] ||
+                         [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"DEFAULT.XEX"]];
+        BOOL bundleNpc = [fm fileExistsAtPath:[bundleGameDir stringByAppendingPathComponent:@"nativePC"]];
+        if (bundleXex || bundleNpc) {
+            self.isIsoDirectMount = NO;
+            self.detectedIsoPath = nil;
+            self.status = DMCAssetStatusReady;
+            self.detectedGamePath = bundleGameDir;
+            self.statusMessage = @"Bundled Game Ready (App Bundle /game/)";
+            dmc4::boot::Trace("DMCAssetManager: Bundled game detected at: " + std::string([bundleGameDir UTF8String]));
+            [self notifyGameReady:bundleGameDir isExecutable:YES];
+            return;
+        }
     }
 
     // None found yet
     self.isIsoDirectMount = NO;
     self.detectedIsoPath = nil;
     self.status = DMCAssetStatusNotFound;
-    self.statusMessage = [NSString stringWithFormat:@"No game files found.\nPlace Devil May Cry 4 .iso into:\n%@", [self userFriendlyDocumentsPath]];
-    dmc4::boot::Trace("DMCAssetManager: No ISO found. Waiting for user to copy ISO into Documents folder.");
+    self.statusMessage = [NSString stringWithFormat:@"No game files found.\nPlace Devil May Cry 4 ISO or extracted game/ into:\n%@", [self userFriendlyDocumentsPath]];
+    dmc4::boot::Trace("DMCAssetManager: No ISO or game/ data found. Waiting for user to copy files into Documents folder.");
     if ([self.delegate respondsToSelector:@selector(assetManagerDidUpdateStatus:message:)]) {
         [self.delegate assetManagerDidUpdateStatus:self.status message:self.statusMessage];
     }
