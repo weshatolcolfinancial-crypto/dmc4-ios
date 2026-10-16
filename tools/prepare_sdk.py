@@ -31,6 +31,16 @@ def setup_dependencies():
                 tar.extractall(libs_dir)
             if os.path.exists(tar_dest):
                 os.remove(tar_dest)
+            
+            # Find MoltenVK.xcframework in extracted contents
+            for root, dirs, files in os.walk(libs_dir):
+                for d in dirs:
+                    if d == "MoltenVK.xcframework" and root != libs_dir:
+                        src_xc = os.path.join(root, d)
+                        if not os.path.exists(moltenvk_path):
+                            import shutil
+                            shutil.move(src_xc, moltenvk_path)
+                            print(f"[+] Moved {src_xc} -> {moltenvk_path}")
             print("[+] MoltenVK framework installed successfully.")
         except Exception as e:
             print(f"[!] Network download skipped or offline: {e}")

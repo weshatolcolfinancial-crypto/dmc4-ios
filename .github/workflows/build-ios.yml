@@ -61,17 +61,35 @@ jobs:
 
       - name: Package Sideloadable IPA
         run: |
-          mkdir -p build/Payload
           APP_PATH=$(find build -name "DevilMayCry4.app" -type d | head -n 1)
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find build -name "*.app" -type d | head -n 1)
           fi
           echo "[+] Found application bundle at: $APP_PATH"
+
+          # 1. Copy App Icons into bundle
+          echo "[+] Bundling DMC4 iOS App Icons..."
+          cp -v ios/AppIcon*.png "$APP_PATH/" || true
+          cp -r ios/AppIcon.appiconset "$APP_PATH/" || true
+
+          # 2. Embed MoltenVK Framework if present
+          mkdir -p "$APP_PATH/Frameworks"
+          MVK_FRAMEWORK=$(find libs -name "MoltenVK.framework" -type d | grep "ios" | head -n 1)
+          if [ -n "$MVK_FRAMEWORK" ]; then
+            echo "[+] Embedding MoltenVK framework from $MVK_FRAMEWORK..."
+            cp -r "$MVK_FRAMEWORK" "$APP_PATH/Frameworks/"
+          fi
+
+          # 3. Ad-hoc code sign for sideloading
+          codesign --force --deep --sign - "$APP_PATH" || true
+
+          # 4. Create Payload directory and zip to IPA
+          mkdir -p build/Payload
           cp -r "$APP_PATH" build/Payload/
           cd build
           zip -r -y -q DevilMayCry4.ipa Payload
           cd ..
-          ls -la build/DevilMayCry4.ipa
+          ls -lh build/DevilMayCry4.ipa
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
