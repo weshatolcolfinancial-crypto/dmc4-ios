@@ -97,9 +97,13 @@ void InitializeLogging() {
         [fm createDirectoryAtPath:logsDir withIntermediateDirectories:YES attributes:nil error:nil];
     }
 
-    // 1. Open Documents/logs/boot.txt (Unbuffered startup trace)
+    // 1. Open Documents/logs/boot.txt (Unbuffered startup trace, rotating old logs)
     NSString *bootPath = [logsDir stringByAppendingPathComponent:@"boot.txt"];
-    int fd = open([bootPath fileSystemRepresentation], O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0644);
+    NSString *bootPrevPath = [logsDir stringByAppendingPathComponent:@"boot.prev.txt"];
+    [fm removeItemAtPath:bootPrevPath error:nil];
+    [fm moveItemAtPath:bootPath toPath:bootPrevPath error:nil];
+
+    int fd = open([bootPath fileSystemRepresentation], O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0644);
     if (fd >= 0) {
         g_bootFd.store(fd, std::memory_order_release);
     }
@@ -114,10 +118,14 @@ void InitializeLogging() {
         sigaction(sig, &sa, &g_prevSignals[sig]);
     }
 
-    // 2. Redirect stdout and stderr to Documents/logs/dmc4.log
+    // 2. Redirect stdout and stderr to Documents/logs/dmc4.log (rotating old logs)
     NSString *dmcLogPath = [logsDir stringByAppendingPathComponent:@"dmc4.log"];
-    FILE *fout = freopen([dmcLogPath fileSystemRepresentation], "a+", stdout);
-    FILE *ferr = freopen([dmcLogPath fileSystemRepresentation], "a+", stderr);
+    NSString *dmcPrevLogPath = [logsDir stringByAppendingPathComponent:@"dmc4.prev.log"];
+    [fm removeItemAtPath:dmcPrevLogPath error:nil];
+    [fm moveItemAtPath:dmcLogPath toPath:dmcPrevLogPath error:nil];
+
+    FILE *fout = freopen([dmcLogPath fileSystemRepresentation], "w+", stdout);
+    FILE *ferr = freopen([dmcLogPath fileSystemRepresentation], "w+", stderr);
     if (fout) setvbuf(stdout, NULL, _IOLBF, 1024);
     if (ferr) setvbuf(stderr, NULL, _IONBF, 0);
 

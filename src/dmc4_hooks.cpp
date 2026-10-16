@@ -352,6 +352,10 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
              arcPath.c_str(), (unsigned int)version, (unsigned int)fileCount, isBigEndian ? "Big (Xbox 360)" : "Little (PC)");
     boot::Trace(logBuf);
 
+    std::vector<uint8_t> bestCandidatePixels;
+    uint32_t bestCandidateW = 0;
+    uint32_t bestCandidateH = 0;
+
     for (auto &entry : entries) {
         if (isBigEndian) {
             entry.typeHash = Swap32(entry.typeHash);
@@ -418,9 +422,23 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
 
                 if (texHeaderOffset + 14 <= uncompressed.size()) {
                     uint32_t dataBlock = *(uint32_t*)(uncompressed.data() + texHeaderOffset + 8);
-                    if (isBigEndian) dataBlock = Swap32(dataBlock);
-                    width = (dataBlock >> 6) & 0x1FFF;
-                    height = (dataBlock >> 19) & 0x1FFF;
+                    uint32_t dataBlockSwapped = Swap32(dataBlock);
+
+                    uint32_t wBE = (dataBlockSwapped >> 6) & 0x1FFF;
+                    uint32_t hBE = (dataBlockSwapped >> 19) & 0x1FFF;
+                    uint32_t wLE = (dataBlock >> 6) & 0x1FFF;
+                    uint32_t hLE = (dataBlock >> 19) & 0x1FFF;
+
+                    if (isBigEndian && wBE >= 64 && wBE <= 4096 && hBE >= 64 && hBE <= 4096) {
+                        width = wBE;
+                        height = hBE;
+                    } else if (wLE >= 64 && wLE <= 4096 && hLE >= 64 && hLE <= 4096) {
+                        width = wLE;
+                        height = hLE;
+                    } else if (wBE >= 64 && wBE <= 4096 && hBE >= 64 && hBE <= 4096) {
+                        width = wBE;
+                        height = hBE;
+                    }
                     formatByte = uncompressed[texHeaderOffset + 13];
                 }
 
@@ -454,40 +472,65 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
                 size_t payloadOffset = texHeaderOffset + 40;
                 if (texHeaderOffset + 0x14 <= uncompressed.size()) {
                     uint32_t firstMip = *(uint32_t*)(uncompressed.data() + texHeaderOffset + 0x10);
-                    if (isBigEndian) firstMip = Swap32(firstMip);
-                    if (firstMip >= 0x10 && firstMip < uncompressed.size()) {
+                    uint32_t firstMipSwapped = Swap32(firstMip);
+                    if (isBigEndian && firstMipSwapped >= 0x10 && firstMipSwapped < uncompressed.size()) {
+                        payloadOffset = texHeaderOffset + firstMipSwapped;
+                    } else if (firstMip >= 0x10 && firstMip < uncompressed.size()) {
                         payloadOffset = texHeaderOffset + firstMip;
                     }
                 }
 
                 const uint8_t *rawBlocks = uncompressed.data() + payloadOffset;
-                size_t rawBlocksLen = uncompressed.size() - payloadOffset;
+                size_t rawBlocksLen = (uncompressed.size() > payloadOffset) ? (uncompressed.size() - payloadOffset) : 0;
 
                 std::vector<uint8_t> linearBlocks;
                 const uint8_t *decodedInput = rawBlocks;
 
                 uint32_t texelPitch = (formatByte == 0x15 || formatByte == 0x16) ? 16 : 8; // DXT5 vs DXT1
-                if (isBigEndian && rawBlocksLen >= (width / 4) * (height / 4) * texelPitch) {
+                if (formatByte == 0x07) texelPitch = 4; // Uncompressed RGBA8
+
+                if (isBigEndian && formatByte != 0x07 && rawBlocksLen >= (width / 4) * (height / 4) * texelPitch) {
                     linearBlocks.resize(rawBlocksLen);
                     UntileXbox360(rawBlocks, linearBlocks.data(), width, height, texelPitch, rawBlocksLen);
                     decodedInput = linearBlocks.data();
                 }
 
-                s_frameWidth = width;
-                s_frameHeight = height;
-                s_activeFramePixels.resize(width * height * 4);
-
-                if (texelPitch == 16) {
-                    DecodeDxt5(decodedInput, rawBlocksLen, s_activeFramePixels.data(), width, height, isBigEndian);
+                std::vector<uint8_t> decodedFrame(width * height * 4);
+                if (formatByte == 0x07 && rawBlocksLen >= width * height * 4) {
+                    memcpy(decodedFrame.data(), rawBlocks, width * height * 4);
+                } else if (texelPitch == 16) {
+                    DecodeDxt5(decodedInput, rawBlocksLen, decodedFrame.data(), width, height, isBigEndian);
                 } else {
-                    DecodeDxt1(decodedInput, rawBlocksLen, s_activeFramePixels.data(), width, height, isBigEndian);
+                    DecodeDxt1(decodedInput, rawBlocksLen, decodedFrame.data(), width, height, isBigEndian);
                 }
 
-                bridge::UpdateGameFrame(s_activeFramePixels.data(), width, height, width * 4);
-                fclose(f);
-                return true;
+                // If texture is high-resolution (full screen or menu bg >= 256x256), present immediately
+                if (width >= 256 && height >= 256) {
+                    s_frameWidth = width;
+                    s_frameHeight = height;
+                    s_activeFramePixels = std::move(decodedFrame);
+                    bridge::UpdateGameFrame(s_activeFramePixels.data(), width, height, width * 4);
+                    fclose(f);
+                    return true;
+                } else {
+                    // Cache candidate in case no larger texture exists in archive
+                    if (bestCandidatePixels.empty() || (width * height > bestCandidateW * bestCandidateH)) {
+                        bestCandidatePixels = std::move(decodedFrame);
+                        bestCandidateW = width;
+                        bestCandidateH = height;
+                    }
+                }
             }
         }
+    }
+
+    if (!bestCandidatePixels.empty()) {
+        s_frameWidth = bestCandidateW;
+        s_frameHeight = bestCandidateH;
+        s_activeFramePixels = std::move(bestCandidatePixels);
+        bridge::UpdateGameFrame(s_activeFramePixels.data(), bestCandidateW, bestCandidateH, bestCandidateW * 4);
+        fclose(f);
+        return true;
     }
 
     fclose(f);
