@@ -27,6 +27,7 @@ endif()
 # Set up include directories
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/lzx
     ${CMAKE_CURRENT_SOURCE_DIR}/src/recompiled
     ${CMAKE_CURRENT_SOURCE_DIR}/renderer
     ${CMAKE_CURRENT_SOURCE_DIR}/ios/src

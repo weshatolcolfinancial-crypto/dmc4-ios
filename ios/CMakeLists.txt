@@ -15,6 +15,8 @@ set(IOS_SOURCES
     src/ControllerManager.mm
     src/DMCBootTrace.mm
     ../src/dmc4_hooks.cpp
+    ../src/lzx/lzxd.c
+    ../src/lzx/lzx_decompress.cpp
     ../renderer/vulkan_metal_bridge.mm
     ${DMC4_GAME_SOURCES}
 )
@@ -28,6 +30,7 @@ set(IOS_HEADERS
     src/ControllerManager.h
     src/DMCBootTrace.h
     ../src/dmc4_hooks.h
+    ../src/lzx/lzx_decompress.h
     ../renderer/vulkan_metal_bridge.h
     ../src/recompiled/dmc4_recomp.h
 )

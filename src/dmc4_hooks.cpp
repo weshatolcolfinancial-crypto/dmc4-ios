@@ -2,6 +2,7 @@
 #include "dmc4_recomp.h"
 #include "DMCBootTrace.h"
 #include "vulkan_metal_bridge.h"
+#include "lzx/lzx_decompress.h"
 #include <cstdio>
 #include <vector>
 #include <string>
@@ -340,6 +341,18 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
         return false;
     }
 
+    // Version >= 0x11 (17) may have an optional 4-byte dummy number before the file table
+    if (version >= 0x11) {
+        uint32_t dummy = 0;
+        if (fread(&dummy, 1, sizeof(dummy), f) == sizeof(dummy)) {
+            uint32_t val = isBigEndian ? Swap32(dummy) : dummy;
+            if (val < 0xFFFFFF00) {
+                // Not a dummy padding, rewind 4 bytes back to file table start
+                fseek(f, -4, SEEK_CUR);
+            }
+        }
+    }
+
     std::vector<ArcEntry> entries(fileCount);
     if (fread(entries.data(), sizeof(ArcEntry), fileCount, f) != fileCount) {
         fclose(f);
@@ -388,15 +401,39 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
             fseek(f, entry.offset, SEEK_SET);
 
             std::vector<uint8_t> uncompressed(entry.size);
+            bool decompressedOk = false;
+            const char *method = "direct";
+
             if (entry.zSize == entry.size) {
-                if (fread(uncompressed.data(), 1, entry.size, f) != entry.size) continue;
+                if (fread(uncompressed.data(), 1, entry.size, f) == entry.size) {
+                    decompressedOk = true;
+                }
             } else {
-                std::vector<uint8_t> compressed(entry.zSize);
-                if (fread(compressed.data(), 1, entry.zSize, f) != entry.zSize) continue;
-                uLongf destLen = entry.size;
-                int zerr = uncompress(uncompressed.data(), &destLen, compressed.data(), entry.zSize);
-                if (zerr != Z_OK) continue;
+                std::vector<uint8_t> compressed(entry.zSize + 32, 0);
+                if (fread(compressed.data(), 1, entry.zSize, f) == entry.zSize) {
+                    // Try Xbox 360 MT Framework LZX decompression first (32KB window)
+                    int lzxErr = dmc4::lzx::Decompress(compressed.data(), entry.zSize, uncompressed.data(), entry.size, 0x8000);
+                    if (lzxErr == 0) {
+                        decompressedOk = true;
+                        method = "LZX";
+                    } else {
+                        // Fallback to zlib uncompress (PC MT Framework or standard deflate)
+                        uLongf destLen = entry.size;
+                        int zerr = uncompress(uncompressed.data(), &destLen, compressed.data(), entry.zSize);
+                        if (zerr == Z_OK) {
+                            decompressedOk = true;
+                            method = "zlib";
+                        }
+                    }
+                }
             }
+
+            if (!decompressedOk) continue;
+
+            char decLog[256];
+            snprintf(decLog, sizeof(decLog), "[DMC4_ARC] Decompressed %s: %u -> %u bytes (%s)",
+                     entry.filename, (unsigned int)entry.zSize, (unsigned int)entry.size, method);
+            boot::Trace(decLog);
 
             bool isTexHeader = false;
             size_t texHeaderOffset = 0;
@@ -661,8 +698,8 @@ void InitializeEngineHooks() {
 
         // 4. Prioritize authentic Title Screen and UI archives first
         std::vector<std::string> priorityArchives = {
-            "title_scr.arc",
             "title_graphic0.arc",
+            "title_scr.arc",
             "title.arc",
             "game_cmn.arc",
             "dmc4_cmn.arc",
@@ -685,12 +722,30 @@ void InitializeEngineHooks() {
             if (screenLoaded) break;
         }
 
-        // Fallback: try any other discovered archives
+        // Fallback: try filtered candidate archives (capped at 20 to protect log buffer)
         if (!screenLoaded) {
+            int fallbackCount = 0;
             for (const auto &arc : s_discoveredArcPaths) {
-                if (TryExtractAndLoadTitleTexture(arc)) {
-                    boot::Trace("[DMC4_Engine] Successfully loaded authentic game screen from: " + arc);
-                    break;
+                std::string lowerArc = arc;
+                std::transform(lowerArc.begin(), lowerArc.end(), lowerArc.begin(), ::tolower);
+                if (lowerArc.find("title") != std::string::npos ||
+                    lowerArc.find("graphic") != std::string::npos ||
+                    lowerArc.find("screen") != std::string::npos ||
+                    lowerArc.find("menu") != std::string::npos ||
+                    lowerArc.find("cmn") != std::string::npos ||
+                    lowerArc.find("stage") != std::string::npos ||
+                    lowerArc.find("st00") != std::string::npos ||
+                    lowerArc.find("st10") != std::string::npos) {
+                    if (TryExtractAndLoadTitleTexture(arc)) {
+                        boot::Trace("[DMC4_Engine] Successfully loaded authentic game screen from fallback: " + arc);
+                        screenLoaded = true;
+                        break;
+                    }
+                    fallbackCount++;
+                    if (fallbackCount >= 20) {
+                        boot::Trace("[DMC4_Engine] Reached fallback archive scan limit (20).");
+                        break;
+                    }
                 }
             }
         }
