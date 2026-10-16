@@ -7,21 +7,34 @@
     <key>CFBundleDisplayName</key>
     <string>Devil May Cry 4</string>
     <key>CFBundleExecutable</key>
-    <string>DMC4iOS</string>
+    <string>DevilMayCry4</string>
     <key>CFBundleIdentifier</key>
     <string>com.capcom.dmc4.ios</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>
-    <string>DMC4</string>
+    <string>DevilMayCry4</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <key>CFBundleSupportedPlatforms</key>
+    <array>
+        <string>iPhoneOS</string>
+    </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>MinimumOSVersion</key>
+    <string>16.0</string>
+    <key>UIDeviceFamily</key>
+    <array>
+        <integer>1</integer>
+        <integer>2</integer>
+    </array>
+    <key>UILaunchScreen</key>
+    <dict/>
 
     <!-- App Icons -->
     <key>CFBundleIconFile</key>
@@ -61,13 +74,19 @@
     <key>CADisableMinimumFrameDurationOnPhone</key>
     <true/>
 
-    <!-- File Sharing & Document Access (Enables dragging game files directly to Documents folder) -->
+    <!-- File Sharing & Document Access (Enables copying game files directly to Documents folder) -->
     <key>UIFileSharingEnabled</key>
     <true/>
     <key>LSSupportsOpeningDocumentsInPlace</key>
     <true/>
 
-    <!-- Game Controller (MFi, DualSense, Xbox Wireless) -->
+    <!-- Game Controller & Game Mode -->
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.action-games</string>
+    <key>GCSupportsGameMode</key>
+    <true/>
+    <key>GCSupportsControllerUserInteraction</key>
+    <true/>
     <key>GCSupportedGameControllers</key>
     <array>
         <dict>
@@ -79,8 +98,6 @@
             <string>MicroGamepad</string>
         </dict>
     </array>
-    <key>GCSupportsControllerUserInteraction</key>
-    <true/>
 
     <!-- Display & Orientation Settings -->
     <key>UIRequiresFullScreen</key>

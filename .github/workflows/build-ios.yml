@@ -67,7 +67,17 @@ jobs:
           fi
           echo "[+] Found application bundle at: $APP_PATH"
 
-          # 1. Copy App Icons into bundle
+          # 1. Compile Assets catalog if actool is available, else copy icons directly
+          if command -v xcrun &> /dev/null && [ -d "ios/Assets.xcassets" ]; then
+            echo "[+] Compiling asset catalog with actool..."
+            xcrun actool ios/Assets.xcassets \
+              --compile "$APP_PATH" \
+              --platform iphoneos \
+              --minimum-deployment-target 16.0 \
+              --target-device iphone --target-device ipad \
+              --app-icon AppIcon \
+              --output-format human-readable-text || true
+          fi
           echo "[+] Bundling DMC4 iOS App Icons..."
           cp -v ios/AppIcon*.png "$APP_PATH/" || true
           cp -r ios/AppIcon.appiconset "$APP_PATH/" || true
@@ -80,12 +90,26 @@ jobs:
             cp -r "$MVK_FRAMEWORK" "$APP_PATH/Frameworks/"
           fi
 
-          # 3. Ad-hoc code sign for sideloading
-          codesign --force --deep --sign - "$APP_PATH" || true
+          # 3. Strip extended attributes, fix permissions, and sign for sideloading
+          echo "[+] Clearing extended attributes and fixing executable permissions..."
+          xattr -cr "$APP_PATH" || true
+          chmod -R 755 "$APP_PATH"
+          chmod +x "$APP_PATH/DevilMayCry4"
 
-          # 4. Create Payload directory and zip to IPA
+          # Sign inner frameworks if present
+          if [ -d "$APP_PATH/Frameworks/MoltenVK.framework" ]; then
+            echo "[+] Ad-hoc signing MoltenVK framework..."
+            codesign --force --sign - --timestamp=none "$APP_PATH/Frameworks/MoltenVK.framework" || true
+          fi
+
+          # Sign the main application bundle with entitlements
+          echo "[+] Ad-hoc signing DevilMayCry4.app with entitlements..."
+          codesign --force --sign - --timestamp=none --entitlements ios/dmc4.entitlements "$APP_PATH" || true
+
+          # 4. Create Payload directory cleanly and zip to IPA
+          rm -rf build/Payload build/DevilMayCry4.ipa
           mkdir -p build/Payload
-          cp -r "$APP_PATH" build/Payload/
+          cp -a "$APP_PATH" build/Payload/DevilMayCry4.app
           cd build
           zip -r -y -q DevilMayCry4.ipa Payload
           cd ..
