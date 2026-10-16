@@ -270,7 +270,7 @@ static void lzxd_reset_state(struct lzxd_stream *lzx) {
   lzx->R0              = 1;
   lzx->R1              = 1;
   lzx->R2              = 1;
-  lzx->header_read     = 0;
+  lzx->header_read     = lzx->no_intel_header ? 1 : 0;
   lzx->block_remaining = 0;
   lzx->block_type      = LZX_BLOCKTYPE_INVALID;
 
@@ -349,6 +349,7 @@ struct lzxd_stream *lzxd_init(struct mspack_system *system,
   lzx->error           = MSPACK_ERR_OK;
   lzx->num_offsets     = position_slots[window_bits - 15] << 3;
   lzx->is_delta        = is_delta;
+  lzx->no_intel_header = 0;
 
   lzx->o_ptr = lzx->o_end = &lzx->e8_buf[0];
   lzxd_reset_state(lzx);
@@ -462,7 +463,7 @@ int lzxd_decompress(struct lzxd_stream *lzx, off_t out_bytes) {
     }
 
     /* read header if necessary */
-    if (!lzx->header_read) {
+    if (!lzx->no_intel_header && !lzx->header_read) {
       /* read 1 bit. if bit=0, intel filesize = 0.
        * if bit=1, read intel filesize (32 bits) */
       j = 0; READ_BITS(i, 1); if (i) { READ_BITS(i, 16); READ_BITS(j, 16); }

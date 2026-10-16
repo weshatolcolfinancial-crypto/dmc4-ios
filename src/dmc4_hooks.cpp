@@ -412,55 +412,46 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
                  (unsigned int)entry.size, (unsigned int)entry.offset, (int)isTexture);
         boot::Trace(entryLog);
 
-        if (isTexture && entry.size > 64 && entry.size < 64 * 1024 * 1024 && entry.zSize > 0) {
+        if (isTexture && entry.size > 64 && entry.size < 256 * 1024 * 1024 && entry.zSize > 0) {
             fseek(f, entry.offset, SEEK_SET);
 
             std::vector<uint8_t> uncompressed(entry.size);
             bool decompressedOk = false;
             const char *method = "direct";
+            char magicHex[64] = "none";
 
             if (entry.zSize == entry.size) {
                 if (fread(uncompressed.data(), 1, entry.size, f) == entry.size) {
                     decompressedOk = true;
                 }
             } else {
-                std::vector<uint8_t> compressed(entry.zSize + 32, 0);
+                std::vector<uint8_t> compressed(entry.zSize + 64, 0);
                 if (fread(compressed.data(), 1, entry.zSize, f) == entry.zSize) {
-                    // 1. Try Xbox 360 MT Framework XMem chunk framing LZX decompression
-                    int xerr = dmc4::xmem::Decompress(compressed.data(), entry.zSize, uncompressed.data(), entry.size);
-                    if (xerr == 0) {
+                    snprintf(magicHex, sizeof(magicHex), "%02X %02X %02X %02X %02X %02X %02X %02X",
+                             compressed[0], compressed[1], compressed[2], compressed[3],
+                             compressed[4], compressed[5], compressed[6], compressed[7]);
+
+                    const char *decMethod = nullptr;
+                    int decErr = dmc4::lzx::Decompress(compressed.data(), entry.zSize, 
+                                                       uncompressed.data(), entry.size, &decMethod);
+                    if (decErr == 0) {
                         decompressedOk = true;
-                        method = "XMem_LZX";
-                    } else {
-                        // 2. Try raw LZX continuous stream
-                        int lzxErr = dmc4::lzx::Decompress(compressed.data(), entry.zSize, uncompressed.data(), entry.size, 0x20000);
-                        if (lzxErr == 0) {
-                            decompressedOk = true;
-                            method = "LZX";
-                        } else {
-                            // 3. Fallback to zlib uncompress (PC MT Framework or standard deflate)
-                            uLongf destLen = entry.size;
-                            int zerr = uncompress(uncompressed.data(), &destLen, compressed.data(), entry.zSize);
-                            if (zerr == Z_OK) {
-                                decompressedOk = true;
-                                method = "zlib";
-                            }
-                        }
+                        method = decMethod ? decMethod : "LZX";
                     }
                 }
             }
 
             if (!decompressedOk) {
                 char failLog[256];
-                snprintf(failLog, sizeof(failLog), "[DMC4_ARC] Warning: Decompression failed for %s (%u -> %u bytes)",
-                         entry.filename, (unsigned int)entry.zSize, (unsigned int)entry.size);
+                snprintf(failLog, sizeof(failLog), "[DMC4_ARC] Warning: Decompression failed for %s (%u -> %u bytes, magic=[%s])",
+                         entry.filename, (unsigned int)entry.zSize, (unsigned int)entry.size, magicHex);
                 boot::Trace(failLog);
                 continue;
             }
 
             char decLog[256];
-            snprintf(decLog, sizeof(decLog), "[DMC4_ARC] Decompressed %s: %u -> %u bytes (%s)",
-                     entry.filename, (unsigned int)entry.zSize, (unsigned int)entry.size, method);
+            snprintf(decLog, sizeof(decLog), "[DMC4_ARC] Decompressed %s: %u -> %u bytes (%s, magic=[%s])",
+                     entry.filename, (unsigned int)entry.zSize, (unsigned int)entry.size, method, magicHex);
             boot::Trace(decLog);
 
             bool isTexHeader = false;

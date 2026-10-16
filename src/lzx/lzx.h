@@ -74,6 +74,7 @@ struct lzxd_stream {
   unsigned char  header_read;     /* have we started decoding at all yet?    */
   unsigned char  input_end;       /* have we reached the end of input?       */
   unsigned char  is_delta;        /* does stream follow LZX DELTA spec?      */
+  unsigned char  no_intel_header; /* 1 = Xbox 360 XMemCompress stream (no Intel E8 header) */
 
   int error;
 
