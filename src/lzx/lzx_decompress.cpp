@@ -1,4 +1,5 @@
 #include "lzx_decompress.h"
+#include "xmem_decompress.h"
 #include <cstdint>
 #include <cstddef>
 #include <cstdlib>
@@ -111,6 +112,11 @@ static int DecompressInternal(const void *src, size_t srcLen, void *dst, size_t 
 }
 
 int Decompress(const void *src, size_t srcLen, void *dst, size_t dstLen, uint32_t windowSize) {
+    // 1. Try Xbox 360 MT Framework XMem frame stream decompressor
+    int xres = dmc4::xmem::Decompress((const uint8_t*)src, srcLen, (uint8_t*)dst, dstLen);
+    if (xres == 0) return 0;
+
+    // 2. Fallback to continuous raw LZX stream
     int res = DecompressInternal(src, srcLen, dst, dstLen, windowSize);
     if (res == 0) return 0;
 

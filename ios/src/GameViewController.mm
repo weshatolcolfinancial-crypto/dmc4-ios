@@ -52,10 +52,17 @@
     self.metalLayer.device = device;
     self.metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
     self.metalLayer.framebufferOnly = YES;
+    self.metalLayer.maximumDrawableCount = 3;
     self.metalLayer.frame = self.view.bounds;
-    self.metalLayer.contentsScale = [UIScreen mainScreen].nativeScale;
-    [self.view.layer addSublayer:self.metalLayer];
-    dmc4::boot::Trace("GameViewController: CAMetalLayer attached to view");
+    CGFloat scale = [UIScreen mainScreen].nativeScale;
+    self.metalLayer.contentsScale = scale;
+    self.metalLayer.drawableSize = CGSizeMake(self.view.bounds.size.width * scale, self.view.bounds.size.height * scale);
+    [self.view.layer insertSublayer:self.metalLayer atIndex:0];
+
+    char logBuf[128];
+    snprintf(logBuf, sizeof(logBuf), "GameViewController: CAMetalLayer attached to view (drawableSize: %.0fx%.0f, scale: %.1f)",
+             self.metalLayer.drawableSize.width, self.metalLayer.drawableSize.height, scale);
+    dmc4::boot::Trace(logBuf);
 }
 
 - (void)setupTouchOverlay {
@@ -149,6 +156,9 @@
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];
     self.metalLayer.frame = self.view.bounds;
+    CGFloat scale = [UIScreen mainScreen].nativeScale;
+    self.metalLayer.contentsScale = scale;
+    self.metalLayer.drawableSize = CGSizeMake(self.view.bounds.size.width * scale, self.view.bounds.size.height * scale);
     self.touchOverlay.frame = self.view.bounds;
     _launcherContainer.frame = self.view.bounds;
 }
@@ -215,7 +225,10 @@
         self->_launcherContainer.alpha = 0.0;
     } completion:^(BOOL finished) {
         self->_launcherContainer.hidden = YES;
+        [self->_launcherContainer removeFromSuperview];
         self.touchOverlay.hidden = NO;
+        [self.view.layer insertSublayer:self.metalLayer atIndex:0];
+        [self.view bringSubviewToFront:self.touchOverlay];
     }];
 
     // 2. Initialize graphics bridge on CAMetalLayer

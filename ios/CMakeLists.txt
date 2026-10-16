@@ -17,6 +17,7 @@ set(IOS_SOURCES
     ../src/dmc4_hooks.cpp
     ../src/lzx/lzxd.c
     ../src/lzx/lzx_decompress.cpp
+    ../src/lzx/xmem_decompress.cpp
     ../renderer/vulkan_metal_bridge.mm
     ${DMC4_GAME_SOURCES}
 )
@@ -31,6 +32,7 @@ set(IOS_HEADERS
     src/DMCBootTrace.h
     ../src/dmc4_hooks.h
     ../src/lzx/lzx_decompress.h
+    ../src/lzx/xmem_decompress.h
     ../renderer/vulkan_metal_bridge.h
     ../src/recompiled/dmc4_recomp.h
 )
@@ -38,7 +40,10 @@ set(IOS_HEADERS
 add_executable(DMC4iOS
     ${IOS_SOURCES}
     ${IOS_HEADERS}
+    dmc4_bg.jpg
 )
+
+set_source_files_properties(dmc4_bg.jpg PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
 set_target_properties(DMC4iOS PROPERTIES
     MACOSX_BUNDLE TRUE

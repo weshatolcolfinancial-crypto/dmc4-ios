@@ -3,6 +3,7 @@
 #include "DMCBootTrace.h"
 #include "vulkan_metal_bridge.h"
 #include "lzx/lzx_decompress.h"
+#include "lzx/xmem_decompress.h"
 #include <cstdio>
 #include <vector>
 #include <string>
@@ -376,7 +377,7 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
             entry.size = Swap32(entry.size);
             entry.offset = Swap32(entry.offset);
         }
-        entry.size &= ~0x40000000;
+        entry.size &= 0x1FFFFFFF; // Clear high 3 flag bits (MT Framework v17)
 
         entry.filename[63] = '\0';
         std::string fname = entry.filename;
@@ -384,20 +385,34 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
         std::transform(lowerFname.begin(), lowerFname.end(), lowerFname.begin(), ::tolower);
 
         bool isTexture = (lowerFname.find(".tex") != std::string::npos) || 
-                         (entry.typeHash == 0x241F5DEB) ||
+                         (lowerFname.find(".rtex") != std::string::npos) ||
+                         (entry.typeHash == 0x3CAD8076) || // DMC4 rTexture (Big-Endian)
+                         (entry.typeHash == 0x7680AD3C) || // DMC4 rTexture (Little-Endian)
+                         (entry.typeHash == 0x27CE98F6) || // DMC4 rRenderTargetTexture (BE)
+                         (entry.typeHash == 0xF698CE27) || // DMC4 rRenderTargetTexture (LE)
+                         (entry.typeHash == 0x241F5DEB) || // RE5 rTexture
                          (entry.typeHash == 0xeb5d1f24);
 
         if (!isTexture) {
             if (lowerFname.find("title") != std::string::npos ||
+                lowerFname.find("graphic") != std::string::npos ||
                 lowerFname.find("logo") != std::string::npos ||
                 lowerFname.find("bg") != std::string::npos ||
                 lowerFname.find("screen") != std::string::npos ||
-                lowerFname.find("cmn") != std::string::npos) {
+                lowerFname.find("cmn") != std::string::npos ||
+                fileCount <= 5) {
                 isTexture = true;
             }
         }
 
-        if (isTexture && entry.size > 128 && entry.size < 64 * 1024 * 1024 && entry.zSize > 0) {
+        char entryLog[256];
+        snprintf(entryLog, sizeof(entryLog), 
+                 "[DMC4_ARC] Entry '%s': type=0x%08X, zSize=%u, size=%u, offset=0x%08X, isTex=%d",
+                 entry.filename, (unsigned int)entry.typeHash, (unsigned int)entry.zSize, 
+                 (unsigned int)entry.size, (unsigned int)entry.offset, (int)isTexture);
+        boot::Trace(entryLog);
+
+        if (isTexture && entry.size > 64 && entry.size < 64 * 1024 * 1024 && entry.zSize > 0) {
             fseek(f, entry.offset, SEEK_SET);
 
             std::vector<uint8_t> uncompressed(entry.size);
@@ -411,24 +426,37 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
             } else {
                 std::vector<uint8_t> compressed(entry.zSize + 32, 0);
                 if (fread(compressed.data(), 1, entry.zSize, f) == entry.zSize) {
-                    // Try Xbox 360 MT Framework LZX decompression first (32KB window)
-                    int lzxErr = dmc4::lzx::Decompress(compressed.data(), entry.zSize, uncompressed.data(), entry.size, 0x8000);
-                    if (lzxErr == 0) {
+                    // 1. Try Xbox 360 MT Framework XMem chunk framing LZX decompression
+                    int xerr = dmc4::xmem::Decompress(compressed.data(), entry.zSize, uncompressed.data(), entry.size);
+                    if (xerr == 0) {
                         decompressedOk = true;
-                        method = "LZX";
+                        method = "XMem_LZX";
                     } else {
-                        // Fallback to zlib uncompress (PC MT Framework or standard deflate)
-                        uLongf destLen = entry.size;
-                        int zerr = uncompress(uncompressed.data(), &destLen, compressed.data(), entry.zSize);
-                        if (zerr == Z_OK) {
+                        // 2. Try raw LZX continuous stream
+                        int lzxErr = dmc4::lzx::Decompress(compressed.data(), entry.zSize, uncompressed.data(), entry.size, 0x20000);
+                        if (lzxErr == 0) {
                             decompressedOk = true;
-                            method = "zlib";
+                            method = "LZX";
+                        } else {
+                            // 3. Fallback to zlib uncompress (PC MT Framework or standard deflate)
+                            uLongf destLen = entry.size;
+                            int zerr = uncompress(uncompressed.data(), &destLen, compressed.data(), entry.zSize);
+                            if (zerr == Z_OK) {
+                                decompressedOk = true;
+                                method = "zlib";
+                            }
                         }
                     }
                 }
             }
 
-            if (!decompressedOk) continue;
+            if (!decompressedOk) {
+                char failLog[256];
+                snprintf(failLog, sizeof(failLog), "[DMC4_ARC] Warning: Decompression failed for %s (%u -> %u bytes)",
+                         entry.filename, (unsigned int)entry.zSize, (unsigned int)entry.size);
+                boot::Trace(failLog);
+                continue;
+            }
 
             char decLog[256];
             snprintf(decLog, sizeof(decLog), "[DMC4_ARC] Decompressed %s: %u -> %u bytes (%s)",
@@ -438,12 +466,14 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
             bool isTexHeader = false;
             size_t texHeaderOffset = 0;
             if (uncompressed.size() >= 40) {
-                if (uncompressed[0] == 'T' && uncompressed[1] == 'E' && uncompressed[2] == 'X') {
+                if ((uncompressed[0] == 'T' && uncompressed[1] == 'E' && uncompressed[2] == 'X') ||
+                    (uncompressed[0] == 'R' && uncompressed[1] == 'T' && uncompressed[2] == 'X')) {
                     isTexHeader = true;
                     texHeaderOffset = 0;
                 } else {
                     for (size_t probe = 0; probe + 40 <= uncompressed.size() && probe <= 64; probe += 4) {
-                        if (uncompressed[probe] == 'T' && uncompressed[probe+1] == 'E' && uncompressed[probe+2] == 'X') {
+                        if ((uncompressed[probe] == 'T' && uncompressed[probe+1] == 'E' && uncompressed[probe+2] == 'X') ||
+                            (uncompressed[probe] == 'R' && uncompressed[probe+1] == 'T' && uncompressed[probe+2] == 'X')) {
                             isTexHeader = true;
                             texHeaderOffset = probe;
                             break;
@@ -557,6 +587,32 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
                         bestCandidateH = height;
                     }
                 }
+            } else if (fileCount <= 5 || lowerFname.find("graphic") != std::string::npos || lowerFname.find("title") != std::string::npos) {
+                // Fallback for dedicated graphic archives without standard TEX 4-byte header
+                uint32_t width = 1280;
+                uint32_t height = 720;
+                size_t rawBlocksLen = uncompressed.size();
+
+                std::vector<uint8_t> decodedFrame(width * height * 4);
+                if (rawBlocksLen >= (width / 4) * (height / 4) * 8) {
+                    std::vector<uint8_t> linearBlocks(rawBlocksLen);
+                    UntileXbox360(uncompressed.data(), linearBlocks.data(), width, height, 8, rawBlocksLen);
+                    DecodeDxt1(linearBlocks.data(), rawBlocksLen, decodedFrame.data(), width, height, isBigEndian);
+                } else if (rawBlocksLen >= width * height * 4) {
+                    memcpy(decodedFrame.data(), uncompressed.data(), width * height * 4);
+                }
+
+                snprintf(logBuf, sizeof(logBuf), 
+                         "[DMC4_Engine] MT Framework: Extracted graphic entry %s (%ux%u, %zu bytes)",
+                         entry.filename, width, height, uncompressed.size());
+                boot::Trace(logBuf);
+
+                s_frameWidth = width;
+                s_frameHeight = height;
+                s_activeFramePixels = std::move(decodedFrame);
+                bridge::UpdateGameFrame(s_activeFramePixels.data(), width, height, width * 4);
+                fclose(f);
+                return true;
             }
         }
     }
