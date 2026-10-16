@@ -69,6 +69,7 @@ target_link_libraries(DMC4iOS PRIVATE
     ${AUDIO_FRAMEWORK}
     ${GAMECONTROLLER_FRAMEWORK}
     "-lobjc"
+    "-lz"
 )
 
 target_link_options(DMC4iOS PRIVATE

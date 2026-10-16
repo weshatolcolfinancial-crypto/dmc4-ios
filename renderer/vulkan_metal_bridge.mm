@@ -18,6 +18,7 @@ static id<MTLCommandQueue> s_commandQueue = nil;
 static id<MTLRenderPipelineState> s_pipelineState = nil;
 static id<MTLTexture> s_gameTexture = nil;
 static id<MTLSamplerState> s_sampler = nil;
+static id<MTLDevice> s_metalDevice = nil;
 
 static const char *s_metalShaderSource = R"(
 #include <metal_stdlib>
@@ -67,15 +68,15 @@ bool InitializeVulkanOnMetalLayer(void *metalLayerPtr) {
 #ifdef __APPLE__
     CAMetalLayer *layer = (__bridge CAMetalLayer *)metalLayerPtr;
     layer.framebufferOnly = YES;
-    id<MTLDevice> device = layer.device;
-    s_commandQueue = [device newCommandQueue];
+    s_metalDevice = layer.device;
+    s_commandQueue = [s_metalDevice newCommandQueue];
 
-    std::cout << "[Vulkan_Metal_Bridge] Hardware GPU: " << [device.name UTF8String] << std::endl;
+    std::cout << "[Vulkan_Metal_Bridge] Hardware GPU: " << [s_metalDevice.name UTF8String] << std::endl;
 
-    // Build Metal Shader Pipeline for native game presentation
+    // Build Metal Shader Pipeline for native presentation
     NSError *error = nil;
     NSString *source = [NSString stringWithUTF8String:s_metalShaderSource];
-    id<MTLLibrary> library = [device newLibraryWithSource:source options:nil error:&error];
+    id<MTLLibrary> library = [s_metalDevice newLibraryWithSource:source options:nil error:&error];
     if (library) {
         id<MTLFunction> vertFunc = [library newFunctionWithName:@"vertexShader"];
         id<MTLFunction> fragFunc = [library newFunctionWithName:@"fragmentShader"];
@@ -85,7 +86,7 @@ bool InitializeVulkanOnMetalLayer(void *metalLayerPtr) {
         pipeDesc.fragmentFunction = fragFunc;
         pipeDesc.colorAttachments[0].pixelFormat = layer.pixelFormat;
 
-        s_pipelineState = [device newRenderPipelineStateWithDescriptor:pipeDesc error:&error];
+        s_pipelineState = [s_metalDevice newRenderPipelineStateWithDescriptor:pipeDesc error:&error];
         if (s_pipelineState) {
             std::cout << "[Vulkan_Metal_Bridge] Hardware presentation pipeline created successfully." << std::endl;
         }
@@ -95,28 +96,56 @@ bool InitializeVulkanOnMetalLayer(void *metalLayerPtr) {
         samplerDesc.magFilter = MTLSamplerMinMagFilterLinear;
         samplerDesc.sAddressMode = MTLSamplerAddressModeClampToEdge;
         samplerDesc.tAddressMode = MTLSamplerAddressModeClampToEdge;
-        s_sampler = [device newSamplerStateWithDescriptor:samplerDesc];
+        s_sampler = [s_metalDevice newSamplerStateWithDescriptor:samplerDesc];
     } else if (error) {
         std::cerr << "[Vulkan_Metal_Bridge] Pipeline error: " << [[error localizedDescription] UTF8String] << std::endl;
     }
 
-    // Load bundled authentic DMC4 frame texture so the viewport is never blank
-    NSString *bgPath = [[NSBundle mainBundle] pathForResource:@"dmc4_bg" ofType:@"jpg"];
-    if (!bgPath) {
-        bgPath = [[[NSBundle mainBundle] resourcePath] stringByAppendingPathComponent:@"dmc4_bg.jpg"];
-    }
-    if (bgPath && [[NSFileManager defaultManager] fileExistsAtPath:bgPath]) {
-        MTKTextureLoader *loader = [[MTKTextureLoader alloc] initWithDevice:device];
-        s_gameTexture = [loader newTextureWithContentsOfURL:[NSURL fileURLWithPath:bgPath] options:nil error:&error];
-        if (s_gameTexture) {
-            std::cout << "[Vulkan_Metal_Bridge] Loaded authentic DMC4 screen texture ("
-                      << s_gameTexture.width << "x" << s_gameTexture.height << ")" << std::endl;
-        }
-    }
+    // Reset game texture - no static background images loaded!
+    s_gameTexture = nil;
 #endif
 
     s_isInitialized = true;
     return true;
+}
+
+void UpdateGameFrame(const void *pixelData, uint32_t width, uint32_t height, uint32_t bytesPerRow) {
+    if (!pixelData || width == 0 || height == 0) return;
+
+#ifdef __APPLE__
+    if (!s_metalDevice) return;
+
+    if (!s_gameTexture || s_gameTexture.width != width || s_gameTexture.height != height) {
+        MTLTextureDescriptor *texDesc = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+                                                                                          width:width
+                                                                                         height:height
+                                                                                      mipmapped:NO];
+        texDesc.usage = MTLTextureUsageShaderRead;
+        s_gameTexture = [s_metalDevice newTextureWithDescriptor:texDesc];
+    }
+
+    if (s_gameTexture) {
+        MTLRegion region = MTLRegionMake2D(0, 0, width, height);
+        [s_gameTexture replaceRegion:region
+                        mipmapLevel:0
+                          withBytes:pixelData
+                        bytesPerRow:bytesPerRow > 0 ? bytesPerRow : (width * 4)];
+    }
+#endif
+}
+
+void ClearGameFrame() {
+#ifdef __APPLE__
+    s_gameTexture = nil;
+#endif
+}
+
+bool HasActiveGameFrame() {
+#ifdef __APPLE__
+    return s_gameTexture != nil;
+#else
+    return false;
+#endif
 }
 
 void RenderFrame(double deltaTime) {
@@ -132,7 +161,7 @@ void RenderFrame(double deltaTime) {
         MTLRenderPassDescriptor *passDesc = [MTLRenderPassDescriptor renderPassDescriptor];
         passDesc.colorAttachments[0].texture = drawable.texture;
         passDesc.colorAttachments[0].loadAction = MTLLoadActionClear;
-        passDesc.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0);
+        passDesc.colorAttachments[0].clearColor = MTLClearColorMake(0.0, 0.0, 0.0, 1.0); // Clean black background
         passDesc.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         if (!s_commandQueue) {
@@ -142,6 +171,7 @@ void RenderFrame(double deltaTime) {
         id<MTLCommandBuffer> commandBuffer = [s_commandQueue commandBuffer];
         id<MTLRenderCommandEncoder> encoder = [commandBuffer renderCommandEncoderWithDescriptor:passDesc];
 
+        // Only draw when the actual game engine produces a frame
         if (s_pipelineState && s_gameTexture) {
             [encoder setRenderPipelineState:s_pipelineState];
             [encoder setFragmentTexture:s_gameTexture atIndex:0];
@@ -166,6 +196,7 @@ void ShutdownGraphics() {
     s_pipelineState = nil;
     s_gameTexture = nil;
     s_sampler = nil;
+    s_metalDevice = nil;
 #endif
 }
 
