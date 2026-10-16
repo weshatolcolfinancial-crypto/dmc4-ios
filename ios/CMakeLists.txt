@@ -44,6 +44,7 @@ set_target_properties(DMC4iOS PROPERTIES
 )
 
 # Frameworks
+find_library(FOUNDATION_FRAMEWORK Foundation REQUIRED)
 find_library(UIKIT_FRAMEWORK UIKit REQUIRED)
 find_library(METAL_FRAMEWORK Metal REQUIRED)
 find_library(METALL_FRAMEWORK MetalKit REQUIRED)
@@ -53,6 +54,7 @@ find_library(AUDIO_FRAMEWORK AudioToolbox REQUIRED)
 find_library(GAMECONTROLLER_FRAMEWORK GameController REQUIRED)
 
 target_link_libraries(DMC4iOS PRIVATE
+    ${FOUNDATION_FRAMEWORK}
     ${UIKIT_FRAMEWORK}
     ${METAL_FRAMEWORK}
     ${METALL_FRAMEWORK}
@@ -60,6 +62,11 @@ target_link_libraries(DMC4iOS PRIVATE
     ${AVFOUNDATION_FRAMEWORK}
     ${AUDIO_FRAMEWORK}
     ${GAMECONTROLLER_FRAMEWORK}
+    "-lobjc"
+)
+
+target_link_options(DMC4iOS PRIVATE
+    "-fobjc-arc"
 )
 
 # Automatic IPA packaging target
