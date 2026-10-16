@@ -1,0 +1,111 @@
+name: Build and Release iOS IPA
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Release Devil May Cry 4 iOS IPA
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Build Tools
+        run: |
+          brew install cmake ninja
+
+      - name: Prepare SDK & Dependencies
+        run: |
+          python3 tools/prepare_sdk.py
+
+      - name: Optional Ahead-of-Time Code Generation
+        run: |
+          if [ -f "game/default.xex" ]; then
+            python3 tools/generate_code.py --xex game/default.xex
+          else
+            echo "[*] No pre-committed default.xex found. Using dynamic runtime loader..."
+          fi
+
+      - name: Configure CMake for iOS (ARM64)
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=iphoneos \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=16.0 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDMC4_ENABLE_PROMOTION=ON \
+            -DDMC4_ENABLE_TOUCH=ON \
+            -DDMC4_BUILD_IPA=ON
+
+      - name: Build App
+        run: |
+          cmake --build build --config Release
+
+      - name: Package Sideloadable IPA
+        run: |
+          mkdir -p build/Payload
+          APP_PATH=$(find build -name "DevilMayCry4.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build -name "*.app" -type d | head -n 1)
+          fi
+          echo "[+] Found application bundle at: $APP_PATH"
+          cp -r "$APP_PATH" build/Payload/
+          cd build
+          zip -r -y -q DevilMayCry4.ipa Payload
+          cd ..
+          ls -la build/DevilMayCry4.ipa
+
+      - name: Upload IPA Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DevilMayCry4-iOS-IPA
+          path: build/DevilMayCry4.ipa
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v1.0.0"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "[*] Release $TAG already exists, uploading new IPA..."
+            gh release upload "$TAG" build/DevilMayCry4.ipa --clobber
+          else
+            echo "[*] Creating new GitHub Release $TAG..."
+            gh release create "$TAG" build/DevilMayCry4.ipa \
+              --title "Devil May Cry 4 iOS v1.0.0" \
+              --notes "### Devil May Cry 4 (Xbox 360) Native iOS Port
+          
+          Native Apple Silicon ARM64 static recompilation port for iPhone and iPad.
+          
+          #### Key Features:
+          - **Zero-Hassle Auto File Discovery**: Automatically detects game files placed in \`Files App > On My iPhone > Devil May Cry 4 > game/\`. No file picker dialog required!
+          - **Custom DMC Combat Touch HUD**: Styled after Devil May Cry 4 with custom icons for Melee Sword [Y], Handgun [X], Devil Bringer Buster [B], Jump [A], Lock-On Target Reticle [RB], and Devil Trigger [LB].
+          - **Apple ProMotion (120 Hz)**: Full 120 FPS high-refresh rate support with physics delta scaling.
+          - **Controller Support**: Full native support for MFi, PlayStation DualSense/DualShock 4, and Xbox Wireless controllers.
+          
+          #### How to Play:
+          1. Sideload \`DevilMayCry4.ipa\` via LiveContainer, SideStore, AltStore, or TrollStore.
+          2. Open the app once to initialize documents directory.
+          3. Copy your DMC4 Xbox 360 ISO, ZIP, or extracted game folder into \`Files App > On My iPhone > Devil May Cry 4 > game/\`.
+          4. Open the app and press **⚔ PLAY**!"
+          fi

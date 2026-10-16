@@ -1,0 +1,22 @@
+# Build outputs
+build/
+DerivedData/
+*.ipa
+Payload/
+libs/
+
+# Game files & large binaries (Users provide their own legal files)
+game/*.xex
+game/*.iso
+game/*.zip
+*.iso
+*.zip
+Documents/
+
+# OS and IDE files
+.DS_Store
+Thumbs.db
+*.swp
+*.user
+.vscode/
+.idea/

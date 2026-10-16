@@ -1,0 +1,53 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "ios",
+      "displayName": "iOS ARM64 (Release)",
+      "description": "Cross-compile for iPhone and iPad on Apple Silicon",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ios",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_SYSROOT": "iphoneos",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "16.0",
+        "DMC4_ENABLE_PROMOTION": "ON",
+        "DMC4_ENABLE_TOUCH": "ON",
+        "DMC4_BUILD_IPA": "ON"
+      }
+    },
+    {
+      "name": "ios-sim",
+      "displayName": "iOS Simulator ARM64",
+      "description": "Compile for iOS Simulator (macOS Apple Silicon)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ios-sim",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_SYSTEM_NAME": "iOS",
+        "CMAKE_OSX_SYSROOT": "iphonesimulator",
+        "CMAKE_OSX_ARCHITECTURES": "arm64",
+        "CMAKE_OSX_DEPLOYMENT_TARGET": "16.0",
+        "DMC4_ENABLE_PROMOTION": "ON",
+        "DMC4_ENABLE_TOUCH": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ios",
+      "configurePreset": "ios"
+    },
+    {
+      "name": "ios-sim",
+      "configurePreset": "ios-sim"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+# Devil May Cry 4 (Xbox 360) Recompilation Manifest
+[project]
+name = "Devil May Cry 4 iOS"
+title_id = "434307DF"
+version = "1.0.0"
+platform = "Xbox 360"
+target_architecture = "arm64"
+target_os = "iOS"
+
+[executable]
+file = "game/default.xex"
+entry_point = "0x822E58C0"
+load_address = "0x82000000"
+image_size = "0x01800000"
+
+[memory]
+guest_ram_mb = 512
+virtual_address_bits = 32
+use_mach_vm_mapping = true
+
+[engine]
+name = "MT Framework"
+version = "1.x"
+developer = "Capcom"
+graphics_backend = "Vulkan-MoltenVK"
+audio_backend = "CoreAudio"
+
+[graphics]
+target_resolution = [1280, 720]
+supported_aspect_ratios = ["16:9", "19.5:9", "20:9"]
+allow_widescreen_fov_patch = true
+edram_emulation = "MetalHeapTile"
+spirv_optimization = true
+
+[promotion]
+supported = true
+target_fps_options = [30, 60, 120]
+default_fps = 60
+unlock_physics_delta = true
+
+[input]
+touch_controls = true
+touch_layout = "dmc_combat_hud"
+controller_support = true
+haptics_enabled = true
+
+[filesystem]
+# Auto-detection priorities:
+# 1. Documents/game/ (extracted folder)
+# 2. Documents/*.iso (Xbox 360 ISO)
+# 3. Documents/*.zip (packaged game files)
+# 4. Documents/DMC4/
+auto_detect_paths = [
+    "Documents/game",
+    "Documents/game/default.xex",
+    "Documents/dmc4.iso",
+    "Documents/*.iso",
+    "Documents/dmc4.zip",
+    "Documents/game.zip"
+]
+save_path = "Documents/saves"
