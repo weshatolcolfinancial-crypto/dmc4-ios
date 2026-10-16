@@ -43,6 +43,7 @@ add_compile_options(
     -Wno-unused-variable
     -fvisibility=hidden
     -ffast-math
+    $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>
 )
 
 # Add subdirectories

@@ -146,12 +146,10 @@
         if ([[item lowercaseString] hasSuffix:@".zip"] && 
             ([[item lowercaseString] containsString:@"dmc"] || [[item lowercaseString] containsString:@"game"])) {
             NSString *zipPath = [docs stringByAppendingPathComponent:item];
-            self.status = DMCAssetStatusExtracting;
-            self.statusMessage = [NSString stringWithFormat:@"Found archive %@. Extracting...", item];
-            
-            dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
-                [self extractArchiveAtPath:zipPath toDestination:gameDir];
-            });
+            self.status = DMCAssetStatusReady;
+            self.detectedGamePath = zipPath;
+            self.statusMessage = [NSString stringWithFormat:@"Detected Game Archive: %@", item];
+            [self notifyGameReady:zipPath isExecutable:NO];
             return;
         }
     }
@@ -176,27 +174,11 @@
 }
 
 - (BOOL)extractArchiveAtPath:(NSString *)archivePath toDestination:(NSString *)destPath {
-    // Automated extraction using system unzip or tar
-    NSTask *task = [[NSTask alloc] init];
-    [task setLaunchPath:@"/usr/bin/unzip"];
-    [task setArguments:@[@"-o", @"-q", archivePath, @"-d", destPath]];
-
-    @try {
-        [task launch];
-        [task waitUntilExit];
-        dispatch_async(dispatch_get_main_queue(), ^{
-            [self scanAndAutoDetectGameFiles];
-        });
-        return ([task terminationStatus] == 0);
-    } @catch (NSException *e) {
-        NSLog(@"[DMCAssetManager] Unzip exception: %@", e);
-        dispatch_async(dispatch_get_main_queue(), ^{
-            self.status = DMCAssetStatusReady;
-            self.detectedGamePath = archivePath;
-            [self notifyGameReady:archivePath isExecutable:NO];
-        });
-        return NO;
-    }
+    // ReXGlue virtual file system mounts archives directly
+    self.status = DMCAssetStatusReady;
+    self.detectedGamePath = archivePath;
+    [self notifyGameReady:archivePath isExecutable:NO];
+    return YES;
 }
 
 - (void)dealloc {
