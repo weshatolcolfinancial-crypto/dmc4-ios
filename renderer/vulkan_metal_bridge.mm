@@ -1,6 +1,9 @@
 #include "vulkan_metal_bridge.h"
 #include "../src/dmc4_hooks.h"
 #include <iostream>
+#include <vector>
+#include <cmath>
+#include <algorithm>
 
 #ifdef __APPLE__
 #import <QuartzCore/CAMetalLayer.h>
@@ -79,8 +82,9 @@ static void CreateDefaultDMCFrame() {
             size_t imgH = CGImageGetHeight(cgImage);
             std::vector<uint32_t> imgPixels(imgW * imgH);
             CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
+            uint32_t bitmapInfo = (uint32_t)kCGImageAlphaPremultipliedLast | (uint32_t)kCGBitmapByteOrder32Big;
             CGContextRef ctx = CGBitmapContextCreate(imgPixels.data(), imgW, imgH, 8, imgW * 4,
-                                                     colorSpace, kCGImageAlphaPremultipliedLast | kCGBitmapByteOrder32Big);
+                                                     colorSpace, (CGBitmapInfo)bitmapInfo);
             CGColorSpaceRelease(colorSpace);
             if (ctx) {
                 CGContextDrawImage(ctx, CGRectMake(0, 0, imgW, imgH), cgImage);
