@@ -3,7 +3,6 @@
 #include "DMCBootTrace.h"
 #include "vulkan_metal_bridge.h"
 #include "lzx/lzx_decompress.h"
-#include "lzx/xmem_decompress.h"
 #include <cstdio>
 #include <vector>
 #include <string>
@@ -374,10 +373,12 @@ static bool TryExtractAndLoadTitleTexture(const std::string &arcPath) {
         if (isBigEndian) {
             entry.typeHash = Swap32(entry.typeHash);
             entry.zSize = Swap32(entry.zSize);
-            entry.size = Swap32(entry.size);
+            uint32_t flags = Swap32(entry.size);
+            entry.size = (flags >> 3) & 0x1FFFFFFF; // Xbox 360 Big-Endian: high 29 bits = uncompressed size, low 3 bits = quality
             entry.offset = Swap32(entry.offset);
+        } else {
+            entry.size &= 0x1FFFFFFF; // PC Little-Endian: low 29 bits = uncompressed size, high 3 bits = quality
         }
-        entry.size &= 0x1FFFFFFF; // Clear high 3 flag bits (MT Framework v17)
 
         entry.filename[63] = '\0';
         std::string fname = entry.filename;

@@ -1,12 +1,44 @@
 #include "lzx_decompress.h"
-#include "xmem_decompress.h"
 #include <cstdint>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <algorithm>
 #include <climits>
+
+#if __has_include(<zlib.h>)
 #include <zlib.h>
+#else
+extern "C" {
+    typedef unsigned long uLongf;
+    typedef unsigned char Bytef;
+    typedef unsigned int uInt;
+    typedef struct z_stream_s {
+        Bytef    *next_in;
+        uInt     avail_in;
+        uLongf   total_in;
+        Bytef    *next_out;
+        uInt     avail_out;
+        uLongf   total_out;
+        char     *msg;
+        struct internal_state *state;
+        void*    (*zalloc)(void*, uInt, uInt);
+        void     (*zfree)(void*, void*);
+        void*    opaque;
+        int      data_type;
+        uLongf   adler;
+        uLongf   reserved;
+    } z_stream;
+    #define Z_OK            0
+    #define Z_STREAM_END    1
+    #define Z_FINISH        4
+    int inflateInit2_(z_stream *strm, int windowBits, const char *version, int stream_size);
+    #define inflateInit2(strm, windowBits) \
+            inflateInit2_((strm), (windowBits), "1.2.11", (int)sizeof(z_stream))
+    int inflate(z_stream *strm, int flush);
+    int inflateEnd(z_stream *strm);
+}
+#endif
 
 #include "mspack.h"
 #include "lzx.h"
@@ -194,6 +226,162 @@ static int DecompressXCompressContainer(const uint8_t *src, size_t srcLen, uint8
     return (outPos == dstLen) ? 0 : -1;
 }
 
+struct ChunkedInput {
+    const uint8_t *src;
+    size_t srcLen;
+    size_t srcPos;
+    size_t chunkRemaining;
+
+    ChunkedInput(const uint8_t *s, size_t len)
+        : src(s), srcLen(len), srcPos(0), chunkRemaining(0) {}
+};
+
+static int mspack_chunked_read(mspack_file *file, void *buffer, int chars) {
+    auto memfile = (mspack_memory_file *)file;
+    auto chunked = (ChunkedInput *)memfile->buffer;
+    uint8_t *out = (uint8_t *)buffer;
+    int bytesRead = 0;
+
+    while (bytesRead < chars && chunked->srcPos < chunked->srcLen) {
+        if (chunked->chunkRemaining == 0) {
+            if (chunked->src[chunked->srcPos] == 0xFF) {
+                if (chunked->srcPos + 5 > chunked->srcLen) break;
+                uint32_t us = ((uint32_t)chunked->src[chunked->srcPos + 1] << 8) | chunked->src[chunked->srcPos + 2];
+                uint32_t cs = ((uint32_t)chunked->src[chunked->srcPos + 3] << 8) | chunked->src[chunked->srcPos + 4];
+                chunked->srcPos += 5;
+                chunked->chunkRemaining = cs;
+            } else {
+                if (chunked->srcPos + 2 > chunked->srcLen) break;
+                uint32_t cs = ((uint32_t)chunked->src[chunked->srcPos] << 8) | chunked->src[chunked->srcPos + 1];
+                chunked->srcPos += 2;
+                chunked->chunkRemaining = cs;
+            }
+            if (chunked->chunkRemaining == 0) break;
+        }
+
+        size_t toRead = std::min((size_t)(chars - bytesRead), chunked->chunkRemaining);
+        if (chunked->srcPos + toRead > chunked->srcLen) toRead = chunked->srcLen - chunked->srcPos;
+        if (toRead == 0) break;
+
+        std::memcpy(out + bytesRead, chunked->src + chunked->srcPos, toRead);
+        chunked->srcPos += toRead;
+        chunked->chunkRemaining -= toRead;
+        bytesRead += (int)toRead;
+    }
+
+    return bytesRead;
+}
+
+static int DecompressChunkedLzx(const uint8_t *src, size_t srcLen, uint8_t *dst, size_t dstLen,
+                                uint32_t windowSize, int resetInterval) {
+    if (!src || !dst || srcLen == 0 || dstLen == 0) return -1;
+
+    // Verify chunk 0 header bounds
+    if (src[0] == 0xFF) {
+        if (srcLen < 5) return -1;
+        uint32_t cs = ((uint32_t)src[3] << 8) | src[4];
+        if (cs == 0 || cs + 5 > srcLen) return -1;
+    } else {
+        if (srcLen < 2) return -1;
+        uint32_t cs = ((uint32_t)src[0] << 8) | src[1];
+        if (cs == 0 || cs + 2 > srcLen) return -1;
+    }
+
+    uint32_t windowBits = 0;
+    while ((1u << windowBits) < windowSize && windowBits < 32) {
+        windowBits++;
+    }
+    if (windowBits < 15) windowBits = 15;
+    if (windowBits > 21) windowBits = 21;
+
+    ChunkedInput chunked(src, srcLen);
+
+    mspack_system *sys = (mspack_system *)std::calloc(1, sizeof(mspack_system));
+    if (!sys) return -1;
+    sys->read = mspack_chunked_read;
+    sys->write = mspack_memory_write;
+    sys->alloc = mspack_memory_alloc;
+    sys->free = mspack_memory_free;
+    sys->copy = mspack_memory_copy;
+
+    mspack_memory_file *lzxsrc = (mspack_memory_file *)std::calloc(1, sizeof(mspack_memory_file));
+    if (!lzxsrc) { std::free(sys); return -1; }
+    lzxsrc->buffer = &chunked;
+    lzxsrc->buffer_size = (off_t)srcLen;
+
+    mspack_memory_file *lzxdst = mspack_memory_open(sys, dst, dstLen);
+    if (!lzxdst) { std::free(lzxsrc); std::free(sys); return -1; }
+
+    lzxd_stream *lzxd = lzxd_init(sys, (mspack_file *)lzxsrc, (mspack_file *)lzxdst,
+                                  windowBits, resetInterval, 0x8000, (off_t)dstLen, 0);
+
+    int resultCode = -1;
+    if (lzxd) {
+        lzxd->no_intel_header = 1;
+        lzxd->header_read = 1;
+        lzxd->intel_filesize = 0;
+        lzxd->intel_started = 0;
+
+        resultCode = lzxd_decompress(lzxd, (off_t)dstLen);
+        lzxd_free(lzxd);
+    }
+
+    std::free(lzxsrc);
+    mspack_memory_close(lzxdst);
+    std::free(sys);
+
+    return (resultCode == MSPACK_ERR_OK) ? 0 : -1;
+}
+
+static int DecompressChunkByChunk(const uint8_t *src, size_t srcLen, uint8_t *dst, size_t dstLen,
+                                  uint32_t windowSize) {
+    if (!src || !dst || srcLen == 0 || dstLen == 0) return -1;
+
+    size_t inPos = 0;
+    size_t outPos = 0;
+
+    while (inPos < srcLen && outPos < dstLen) {
+        uint32_t us = 0, cs = 0;
+        if (src[inPos] == 0xFF) {
+            if (inPos + 5 > srcLen) break;
+            us = ((uint32_t)src[inPos + 1] << 8) | src[inPos + 2];
+            cs = ((uint32_t)src[inPos + 3] << 8) | src[inPos + 4];
+            inPos += 5;
+        } else {
+            if (inPos + 2 > srcLen) break;
+            us = 32768;
+            cs = ((uint32_t)src[inPos] << 8) | src[inPos + 1];
+            inPos += 2;
+        }
+        if (cs == 0 || inPos + cs > srcLen) break;
+
+        size_t curOut = std::min((size_t)us, dstLen - outPos);
+
+        // 1. If chunk is stored uncompressed
+        if (cs == curOut) {
+            std::memcpy(dst + outPos, src + inPos, curOut);
+            outPos += curOut;
+            inPos += cs;
+            continue;
+        }
+
+        // 2. Try raw LZX for this chunk
+        int err = DecompressRawLzx(src + inPos, cs, dst + outPos, curOut, windowSize, 0, true);
+        if (err != 0) {
+            // 3. Try raw deflate for this chunk
+            err = DecompressRawDeflate(src + inPos, cs, dst + outPos, curOut, -15);
+        }
+        if (err != 0) {
+            return -1;
+        }
+
+        outPos += curOut;
+        inPos += cs;
+    }
+
+    return (outPos == dstLen) ? 0 : -1;
+}
+
 int Decompress(const void *src, size_t srcLen, void *dst, size_t dstLen,
                const char **outMethod, uint32_t windowSize) {
     if (!src || !dst || srcLen == 0 || dstLen == 0) return -1;
@@ -205,67 +393,53 @@ int Decompress(const void *src, size_t srcLen, void *dst, size_t dstLen,
         return 0;
     }
 
-    // 2. Raw Deflate (-15): Headerless deflate stream used in Capcom MT Framework ARC
+    // 2. Streaming Chunked LZX through libmspack (continuous sliding history, 32KB window)
+    if (DecompressChunkedLzx(bytes, srcLen, (uint8_t*)dst, dstLen, 0x8000, 0) == 0) {
+        if (outMethod) *outMethod = "XMemChunked_LZX32k_Continuous";
+        return 0;
+    }
+
+    // 3. Streaming Chunked LZX through libmspack (32KB frame reset)
+    if (DecompressChunkedLzx(bytes, srcLen, (uint8_t*)dst, dstLen, 0x8000, 1) == 0) {
+        if (outMethod) *outMethod = "XMemChunked_LZX32k_Reset1";
+        return 0;
+    }
+
+    // 4. Streaming Chunked LZX with larger 64KB/128KB windows
+    if (DecompressChunkedLzx(bytes, srcLen, (uint8_t*)dst, dstLen, 0x10000, 0) == 0) {
+        if (outMethod) *outMethod = "XMemChunked_LZX64k";
+        return 0;
+    }
+    if (DecompressChunkedLzx(bytes, srcLen, (uint8_t*)dst, dstLen, 0x20000, 0) == 0) {
+        if (outMethod) *outMethod = "XMemChunked_LZX128k";
+        return 0;
+    }
+
+    // 5. Independent chunk-by-chunk LZX/Deflate
+    if (DecompressChunkByChunk(bytes, srcLen, (uint8_t*)dst, dstLen, 0x8000) == 0) {
+        if (outMethod) *outMethod = "XMemChunkByChunk";
+        return 0;
+    }
+
+    // 6. Headerless Raw Deflate (-15)
     if (DecompressRawDeflate(bytes, srcLen, dst, dstLen, -15) == 0) {
         if (outMethod) *outMethod = "RawDeflate";
         return 0;
     }
 
-    // 3. Standard Zlib (15): With 0x78 zlib header
+    // 7. Standard Zlib (15, 0x78 header)
     if (DecompressRawDeflate(bytes, srcLen, dst, dstLen, 15) == 0) {
         if (outMethod) *outMethod = "Zlib";
         return 0;
     }
 
-    // 4. Auto zlib / gzip (47)
-    if (DecompressRawDeflate(bytes, srcLen, dst, dstLen, 47) == 0) {
-        if (outMethod) *outMethod = "Gzip";
-        return 0;
-    }
-
-    // 5. Raw XMem LZX without Intel E8 header (32KB window = 0x8000, continuous stream)
+    // 8. Raw continuous LZX without chunk headers (window 32KB..128KB)
     if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x8000, 0, true) == 0) {
         if (outMethod) *outMethod = "RawLZX_32k";
         return 0;
     }
-
-    // 6. Raw XMem LZX with 32KB partition reset (resetInterval = 1)
-    if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x8000, 1, true) == 0) {
-        if (outMethod) *outMethod = "RawLZX_32k_Reset1";
-        return 0;
-    }
-
-    // 7. Raw XMem LZX with 64KB, 128KB, 256KB, 512KB windows
-    if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x10000, 0, true) == 0) {
-        if (outMethod) *outMethod = "RawLZX_64k";
-        return 0;
-    }
     if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x20000, 0, true) == 0) {
         if (outMethod) *outMethod = "RawLZX_128k";
-        return 0;
-    }
-    if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x40000, 8, true) == 0) {
-        if (outMethod) *outMethod = "RawLZX_256k_P8";
-        return 0;
-    }
-    if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x80000, 16, true) == 0) {
-        if (outMethod) *outMethod = "RawLZX_512k_P16";
-        return 0;
-    }
-
-    // 8. Xbox 360 XMem frame-chunked (XNB style 2-byte chunk headers)
-    if (dmc4::xmem::Decompress(bytes, srcLen, (uint8_t*)dst, dstLen) == 0) {
-        if (outMethod) *outMethod = "XMemChunked";
-        return 0;
-    }
-
-    // 9. Standard CAB LZX (with Intel E8 header)
-    if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x8000, 0, false) == 0) {
-        if (outMethod) *outMethod = "CABLzx_32k";
-        return 0;
-    }
-    if (DecompressRawLzx(bytes, srcLen, dst, dstLen, 0x20000, 0, false) == 0) {
-        if (outMethod) *outMethod = "CABLzx_128k";
         return 0;
     }
 
