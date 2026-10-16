@@ -13,6 +13,7 @@ set(IOS_SOURCES
     src/DisplayLinkManager.mm
     src/TouchOverlayView.mm
     src/ControllerManager.mm
+    src/DMCBootTrace.mm
     ../src/dmc4_hooks.cpp
     ../renderer/vulkan_metal_bridge.mm
 )
@@ -24,6 +25,7 @@ set(IOS_HEADERS
     src/DisplayLinkManager.h
     src/TouchOverlayView.h
     src/ControllerManager.h
+    src/DMCBootTrace.h
     ../src/dmc4_hooks.h
     ../renderer/vulkan_metal_bridge.h
 )

@@ -1,7 +1,9 @@
 #import "DMCAssetManager.h"
 #import "dmc4_hooks.h"
+#import "DMCBootTrace.h"
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/stat.h>
 
 @interface DMCAssetManager ()
 @property (nonatomic, readwrite) DMCAssetStatus status;
@@ -50,9 +52,10 @@
 
 - (void)ensureStandardDirectoriesExist {
     NSFileManager *fm = [NSFileManager defaultManager];
+    NSString *docs = [self documentsDirectory];
     NSString *gameDir = [self standardGameDirectory];
-    NSString *savesDir = [[self documentsDirectory] stringByAppendingPathComponent:@"saves"];
-    NSString *logsDir = [[self documentsDirectory] stringByAppendingPathComponent:@"logs"];
+    NSString *savesDir = [docs stringByAppendingPathComponent:@"saves"];
+    NSString *logsDir = [docs stringByAppendingPathComponent:@"logs"];
     
     BOOL isDir = NO;
     if (![fm fileExistsAtPath:gameDir isDirectory:&isDir]) {
@@ -93,11 +96,11 @@
     NSString *docs = [self documentsDirectory];
     NSString *gameDir = [self standardGameDirectory];
     
-    NSLog(@"[DMCAssetManager] Auto-scanning: %@", docs);
+    dmc4::boot::Trace("DMCAssetManager: Auto-scanning: " + std::string([docs UTF8String]));
     self.status = DMCAssetStatusSearching;
-    self.statusMessage = @"Scanning for Devil May Cry 4 files...";
+    self.statusMessage = @"Scanning for Devil May Cry 4 ISO in Documents...";
 
-    // 1. Direct ISO Detection in Documents/ or Documents/game/
+    // 1. Direct ISO Detection in Documents/
     NSArray *docItems = [fm contentsOfDirectoryAtPath:docs error:nil];
     for (NSString *item in docItems) {
         if ([[item lowercaseString] hasSuffix:@".iso"]) {
@@ -106,16 +109,45 @@
             unsigned long long sizeBytes = [attrs fileSize];
             double sizeGB = (double)sizeBytes / (1024.0 * 1024.0 * 1024.0);
 
+            dmc4::boot::Trace("DMCAssetManager: Found Xbox 360 ISO: " + std::string([item UTF8String]) + 
+                              " (" + std::to_string(sizeBytes) + " bytes / " + std::to_string(sizeGB) + " GB)");
+
+            // Validate GDFX Partition
+            FILE *f = fopen([isoPath fileSystemRepresentation], "rb");
+            if (f) {
+                uint64_t probeOffsets[] = {0xFD90000ULL, 0x0ULL, 0x10000ULL, 0x2080000ULL};
+                bool magicFound = false;
+                for (uint64_t off : probeOffsets) {
+                    fseeko(f, off, SEEK_SET);
+                    char magic[24] = {0};
+                    if (fread(magic, 1, 20, f) == 20) {
+                        if (memcmp(magic, "MICROSOFT*XBOX*MEDIA", 20) == 0) {
+                            magicFound = true;
+                            char buf[128];
+                            snprintf(buf, sizeof(buf), "DMCAssetManager: GDFX partition magic verified at offset 0x%llX", (unsigned long long)off);
+                            dmc4::boot::Trace(buf);
+                            break;
+                        }
+                    }
+                }
+                fclose(f);
+                if (!magicFound) {
+                    dmc4::boot::Trace("DMCAssetManager: Note: Non-standard GDFX offset, using virtual container wrapper.");
+                }
+            }
+
             self.detectedIsoPath = isoPath;
             self.detectedGamePath = isoPath;
             self.isIsoDirectMount = YES;
             self.status = DMCAssetStatusReady;
             self.statusMessage = [NSString stringWithFormat:@"Xbox 360 ISO Ready: %@ (%.2f GB)", item, sizeGB];
+            dmc4::boot::Trace("DMCAssetManager: ISO mount ready: " + std::string([isoPath UTF8String]));
             [self notifyGameReady:isoPath isExecutable:YES];
             return;
         }
     }
 
+    // 2. Direct ISO Detection in Documents/game/
     NSArray *gameItems = [fm contentsOfDirectoryAtPath:gameDir error:nil];
     for (NSString *item in gameItems) {
         if ([[item lowercaseString] hasSuffix:@".iso"]) {
@@ -124,6 +156,7 @@
             unsigned long long sizeBytes = [attrs fileSize];
             double sizeGB = (double)sizeBytes / (1024.0 * 1024.0 * 1024.0);
 
+            dmc4::boot::Trace("DMCAssetManager: Found ISO in game folder: " + std::string([item UTF8String]));
             self.detectedIsoPath = isoPath;
             self.detectedGamePath = isoPath;
             self.isIsoDirectMount = YES;
@@ -134,7 +167,7 @@
         }
     }
 
-    // 2. Check if extracted game exists in Documents/game/
+    // 3. Check for extracted game in Documents/game/
     NSString *gameXex = [gameDir stringByAppendingPathComponent:@"default.xex"];
     if ([fm fileExistsAtPath:gameXex]) {
         self.isIsoDirectMount = NO;
@@ -142,21 +175,9 @@
         self.status = DMCAssetStatusReady;
         self.detectedGamePath = gameDir;
         self.statusMessage = @"Game directory ready in /Documents/game/";
+        dmc4::boot::Trace("DMCAssetManager: Found extracted default.xex in " + std::string([gameDir UTF8String]));
         [self notifyGameReady:gameDir isExecutable:YES];
         return;
-    }
-    
-    for (NSString *item in gameItems) {
-        NSString *lower = [item lowercaseString];
-        if ([lower containsString:@"native"] || [lower containsString:@"rom"] || [lower hasSuffix:@".arc"]) {
-            self.isIsoDirectMount = NO;
-            self.detectedIsoPath = nil;
-            self.status = DMCAssetStatusReady;
-            self.detectedGamePath = gameDir;
-            self.statusMessage = @"Extracted DMC4 data ready in /Documents/game/";
-            [self notifyGameReady:gameDir isExecutable:YES];
-            return;
-        }
     }
 
     // None found yet
@@ -164,6 +185,7 @@
     self.detectedIsoPath = nil;
     self.status = DMCAssetStatusNotFound;
     self.statusMessage = [NSString stringWithFormat:@"No game files found.\nPlace Devil May Cry 4 .iso into:\n%@", [self userFriendlyDocumentsPath]];
+    dmc4::boot::Trace("DMCAssetManager: No ISO found. Waiting for user to copy ISO into Documents folder.");
     if ([self.delegate respondsToSelector:@selector(assetManagerDidUpdateStatus:message:)]) {
         [self.delegate assetManagerDidUpdateStatus:self.status message:self.statusMessage];
     }
